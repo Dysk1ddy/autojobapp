@@ -15,10 +15,13 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 9. Add local resume file import, repeated-section fill upgrades, and browser E2E coverage.
 10. Add popup profile switching, lazy-loaded resume parsers, and deeper ATS browser coverage.
 11. Add configurable fill modes, an optional auto-submit toggle, and saved resume upload controls.
+12. Add profile JSON import and export for backup and restore.
+13. Add AI-assisted autofill with an OpenAI API key setting.
+14. Add a fully auto AI override that can bypass the default AI review safeguard.
 
-This repo is currently on Step 11.
+This repo is currently on Step 14.
 
-## What Step 11 includes
+## What Step 14 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -47,6 +50,13 @@ This repo is currently on Step 11.
 - Extension settings for Conservative, Neutral, and Liberal autofill behavior
 - Optional auto-submit that only targets strongly detected final submit controls
 - Saved resume upload and linking inside the active applicant profile
+- Profile JSON export for local backup of the current applicant profile
+- Profile JSON import that restores either a raw profile backup or a full extension-state backup into the draft profile
+- Optional AI-assisted autofill using the OpenAI Responses API
+- A locally stored OpenAI API key slot in extension settings
+- Review-first AI suggestions for ambiguous blank fields
+- Auto-submit blocking whenever an AI suggestion was actually used to fill a field
+- An explicit fully auto override that allows AI-assisted fills to continue to final submit when you intentionally turn that safeguard off
 - Vitest plus jsdom test harness
 - HTML fixtures for generic, Greenhouse, Lever, and Workday application pages
 - Resume import fixture coverage
@@ -56,7 +66,7 @@ This repo is currently on Step 11.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 11 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, and live job-site file inputs still do not accept scripted uploads.
+Step 14 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, live job-site file inputs still do not accept scripted uploads, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, and AI-filled submits remain review-first unless you explicitly enable the fully auto override.
 
 ## Project structure
 
@@ -85,6 +95,7 @@ AutoJobApp/
 |   |-- popup/
 |   |   `-- main.tsx
 |   |-- shared/
+|   |   |-- ai.ts
 |   |   |-- core.ts
 |   |   |-- resume-file-helpers.ts
 |   |   |-- resume-files.ts
@@ -118,6 +129,7 @@ Responsible for:
 - receiving popup commands
 - injecting the content script into the active tab
 - asking the content script to scan the page
+- optionally requesting AI suggestions from OpenAI for ambiguous blanks
 - storing the last scan result
 
 ### Content script
@@ -132,7 +144,9 @@ Responsible for:
 - collecting field-level metadata for classifier input
 - mapping candidate fields to profile keys with confidence scores
 - filling controls according to the configured confidence threshold with framework-friendly events
+- using background-provided AI suggestions as a fallback for ambiguous blank fields
 - optionally clicking a strongly detected final submit control after fill when auto-submit is enabled
+- blocking auto-submit if any AI-assisted fill was used on the page
 - highlighting changed controls for manual review
 - returning scan data without modifying the page
 
@@ -179,7 +193,7 @@ Responsible for:
 Responsible for:
 
 - showing current extension status
-- editing the active fill mode and auto-submit toggle
+- editing the active fill mode, auto-submit toggle, and fully auto override
 - switching between saved applicant profiles
 - duplicating the active profile into a new variant
 - triggering a page scan
@@ -192,8 +206,10 @@ Responsible for:
 Responsible for:
 
 - editing the active applicant profile through a draft form
-- editing extension-level fill mode and auto-submit settings
+- editing extension-level fill mode, auto-submit, and fully auto settings
+- editing the AI-assist toggle and locally stored OpenAI API key
 - linking a saved resume file to the active profile
+- importing and exporting applicant profile JSON backups
 - showing readiness metrics for the saved profile
 - exposing the active applicant profile shape for debugging
 - resetting state while we iterate
@@ -214,6 +230,10 @@ It currently contains:
 - `activeProfileId`: which profile the extension should use
 - `settings.fillMode`: Conservative, Neutral, or Liberal autofill behavior
 - `settings.autoSubmit`: whether the extension should click a detected final submit control after fill
+- `settings.fullyAutoEnabled`: whether AI-assisted fills may bypass the default review-before-submit safeguard
+- `settings.aiAssistEnabled`: whether AI suggestions should run during scan or fill
+- `settings.openAiApiKey`: the locally stored OpenAI API key used for optional AI assistance
+- `settings.aiAssistModel`: the OpenAI model alias used for optional AI assistance
 - `lastScan`: latest scan summary from the popup
 - `lastResumeImport`: latest local resume-import summary from the options page
 - `lastResumeImport.sourceKind`: whether the last import came from pasted text or a local file
@@ -318,15 +338,17 @@ npm.cmd run test:e2e
 ### Options page
 
 - Open the options page from the popup
-- Use it to edit the active profile, import pasted resume text into the draft, save or reset your draft, and inspect the active profile JSON when debugging
+- Use it to edit the active profile, import pasted resume text into the draft, import or export profile JSON backups, save or reset your draft, and inspect the active profile JSON when debugging
 - Use the lower debug sections to inspect field match breakdown, last fill summary, and the last scan snapshot
 - Reset state there if the scaffold gets into a bad state while testing
 
 ## Privacy posture for the scaffold
 
 - The extension uses `activeTab` instead of broad automatic page injection
-- No network calls are made
-- No form submission is automated
+- No background network calls are made unless AI assist is explicitly enabled
+- When AI assist is enabled, reduced field context plus saved profile data may be sent to OpenAI
+- Final submit clicks only happen when the user explicitly enables auto-submit
+- AI-assisted fills require manual review before submit unless the fully auto override is explicitly enabled
 - High-confidence autofill happens only when the user explicitly triggers it
 - All state stays in local extension storage
 
@@ -406,6 +428,27 @@ npm.cmd run test:e2e
 - Conservative, Neutral, and Liberal modes change which confidence bands are actually filled
 - Auto-submit stays off by default and only targets strongly detected final submit controls
 - A resume file can be linked as the saved resume for the active profile without requiring immediate parsing
+
+## Step 12 acceptance criteria
+
+- The options page can export the current applicant profile as a JSON backup file
+- The options page can import either a raw profile JSON export or a full stored-state JSON backup into the current draft profile
+- Imported backups are normalized into the current schema before they are saved
+- Import remains review-first by updating the draft profile only until the user saves changes
+
+## Step 13 acceptance criteria
+
+- The options page exposes an AI-assist toggle and a locally stored OpenAI API key field
+- The background worker can request structured AI suggestions for ambiguous blank fields during scan and fill
+- The popup and options page both surface AI suggestion output for review
+- Auto-submit is skipped whenever any AI suggestion was actually used to fill the page
+
+## Step 14 acceptance criteria
+
+- The popup and options page both expose a fully auto setting for AI-assisted autofill
+- Fully auto remains off by default in fresh state and migrated state
+- AI-assisted fills still block auto-submit unless the fully auto override is explicitly enabled
+- When fully auto is enabled alongside auto-submit, AI-assisted fills may continue to the detected final submit control
 
 ## Next step
 

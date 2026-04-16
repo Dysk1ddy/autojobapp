@@ -27,7 +27,10 @@ const roadmap = [
   "Step 8: tests and hardening",
   "Step 9: file import, repeated fill, and browser QA",
   "Step 10: multi-profile popup flow, lazy parsers, and ATS browser QA",
-  "Step 11: fill modes, auto-submit, and saved resume upload"
+  "Step 11: fill modes, auto-submit, and saved resume upload",
+  "Step 12: profile backup import and export",
+  "Step 13: AI-assisted autofill",
+  "Step 14: fully auto AI override"
 ];
 
 function PopupApp() {
@@ -43,6 +46,9 @@ function PopupApp() {
   const lastFill = state?.lastFill ?? null;
   const fillMode = state?.settings.fillMode ?? "conservative";
   const autoSubmitEnabled = state?.settings.autoSubmit ?? false;
+  const fullyAutoEnabled = state?.settings.fullyAutoEnabled ?? false;
+  const aiAssistEnabled = state?.settings.aiAssistEnabled ?? false;
+  const aiAssistConfigured = Boolean(state?.settings.openAiApiKey?.trim());
   const activeProfile = useMemo(
     () => (state ? getActiveProfile(state) : null),
     [state]
@@ -68,9 +74,19 @@ function PopupApp() {
     [lastScan, fillMode]
   );
   const templateMatches = useMemo(() => getTemplateMatches(lastScan), [lastScan]);
+  const aiSuggestions = useMemo(
+    () => lastScan?.aiAssist.suggestions.slice(0, 6) ?? [],
+    [lastScan]
+  );
   const scanStatus = useMemo(
-    () => getScanStatus(lastScan, fillableMatches.length, reviewMatches.length),
-    [lastScan, fillableMatches.length, reviewMatches.length]
+    () =>
+      getScanStatus(
+        lastScan,
+        fillableMatches.length,
+        reviewMatches.length,
+        aiSuggestions.length
+      ),
+    [lastScan, fillableMatches.length, reviewMatches.length, aiSuggestions.length]
   );
   const latestFillResults = useMemo(
     () => lastFill?.results.slice(0, 6) ?? [],
@@ -99,7 +115,7 @@ function PopupApp() {
     setStatus(
       `Autofilling ${getFillModeLabel(fillMode).toLowerCase()} matches${
         autoSubmitEnabled ? " and watching for a final submit button" : ""
-      }...`
+      }${aiAssistEnabled ? " with AI assistance enabled" : ""}...`
     );
 
     try {
@@ -210,6 +226,72 @@ function PopupApp() {
     }
   }
 
+  async function updateFullyAuto(nextFullyAutoEnabled: boolean) {
+    if (!state || nextFullyAutoEnabled === state.settings.fullyAutoEnabled) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus(
+      nextFullyAutoEnabled
+        ? "Enabling fully auto AI autofill..."
+        : "Restoring AI review safeguards..."
+    );
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "UPDATE_SETTINGS",
+        settings: {
+          fullyAutoEnabled: nextFullyAutoEnabled
+        }
+      });
+      handleStateResponse(
+        response,
+        response.ok
+          ? nextFullyAutoEnabled
+            ? "Fully auto enabled. AI-assisted fills may now auto-submit when auto-submit is also on."
+            : "Fully auto disabled. AI-assisted fills will require review before submit again."
+          : status
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateAiAssist(nextAiAssistEnabled: boolean) {
+    if (!state || nextAiAssistEnabled === state.settings.aiAssistEnabled) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus(
+      nextAiAssistEnabled
+        ? "Enabling AI-assisted autofill..."
+        : "Disabling AI-assisted autofill..."
+    );
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "UPDATE_SETTINGS",
+        settings: {
+          aiAssistEnabled: nextAiAssistEnabled
+        }
+      });
+      handleStateResponse(
+        response,
+        response.ok
+          ? nextAiAssistEnabled
+            ? aiAssistConfigured
+              ? "AI-assisted autofill enabled."
+              : "AI assist enabled. Add an OpenAI API key in options to use it."
+            : "AI-assisted autofill disabled."
+          : status
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleStateResponse(
     response: RuntimeResponse,
     successMessage: string
@@ -233,9 +315,9 @@ function PopupApp() {
           <span className="eyebrow">AutoJobApp</span>
           <h1>Preview first. Fill second.</h1>
           <p>
-            Step 11 adds live fill-mode controls, an optional auto-submit
-            toggle, and clearer saved-resume visibility, so you can tune how
-            aggressive the extension should be on each application flow.
+            Step 14 keeps AI-assisted suggestions in place while letting you
+            explicitly opt into a fully auto path when you want to bypass the
+            default AI review safeguard.
           </p>
         </div>
         <div className="badge-row">
@@ -244,6 +326,12 @@ function PopupApp() {
           </span>
           <span className="badge badge-warm">
             {autoSubmitEnabled ? "Auto-submit on" : "Manual submit"}
+          </span>
+          <span className="badge">
+            {aiAssistEnabled ? "AI assist on" : "AI assist off"}
+          </span>
+          <span className="badge">
+            {fullyAutoEnabled ? "Fully auto on" : "Fully auto off"}
           </span>
         </div>
       </section>
@@ -266,6 +354,10 @@ function PopupApp() {
           <article className="stat-card">
             <span className="stat-label">Ready to fill</span>
             <strong>{scanStatus.readyToFill}</strong>
+          </article>
+          <article className="stat-card">
+            <span className="stat-label">AI suggestions</span>
+            <strong>{scanStatus.aiSuggestions}</strong>
           </article>
         </div>
 
@@ -337,12 +429,54 @@ function PopupApp() {
             />
             <span className="field-label">Enable auto-submit</span>
           </label>
+
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={aiAssistEnabled}
+              disabled={busy}
+              onChange={(event) => void updateAiAssist(event.target.checked)}
+            />
+            <span className="field-label">Enable AI assist</span>
+          </label>
+
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={fullyAutoEnabled}
+              disabled={busy}
+              onChange={(event) => void updateFullyAuto(event.target.checked)}
+            />
+            <span className="field-label">Fully auto AI autofill</span>
+          </label>
         </div>
 
         <p className="helper-line">
           Auto-submit only clicks strongly detected final submit controls after
           a fill attempt. It will not click generic next-step buttons.
         </p>
+        <p className="helper-line">
+          AI assist uses your saved OpenAI API key from options, suggests values
+          for ambiguous blanks, and keeps AI-assisted submits review-first by
+          default.
+        </p>
+        <p className="helper-line">
+          Fully auto disables that AI review safeguard. When both auto-submit
+          and AI assist are on, AI-filled pages may go straight to the final
+          submit control.
+        </p>
+        {!aiAssistConfigured && aiAssistEnabled ? (
+          <p className="helper-line">
+            AI assist is turned on, but there is no API key saved yet. Add one
+            in the options page.
+          </p>
+        ) : null}
+        {fullyAutoEnabled ? (
+          <p className="helper-line">
+            Fully auto is enabled. Review-before-submit safeguards for AI-filled
+            fields are currently off.
+          </p>
+        ) : null}
       </section>
 
       <section className="surface">
@@ -545,6 +679,40 @@ function PopupApp() {
 
       <section className="surface">
         <div className="section-head">
+          <h2>AI suggestions</h2>
+          <span className="inline-note">
+            {lastScan
+              ? `${aiSuggestions.length} AI-backed suggestion${aiSuggestions.length === 1 ? "" : "s"}`
+              : "No scan yet"}
+          </span>
+        </div>
+
+        {aiSuggestions.length > 0 ? (
+          <div className="match-list">
+            {aiSuggestions.map((suggestion) => (
+              <MatchCard
+                key={suggestion.fieldId}
+                title={suggestion.label || suggestion.selectorHint}
+                badge={suggestion.confidence}
+                copy={
+                  suggestion.suggestedProfileLabel
+                    ? `${suggestion.suggestedProfileLabel}${suggestion.suggestedProfileKey ? ` -> ${suggestion.suggestedProfileKey}` : ""}`
+                    : "Generated answer"
+                }
+                helper={`${suggestion.valuePreview} | ${suggestion.reason}`}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="muted">
+            When AI assist is enabled and a scan finds ambiguous blank fields,
+            suggestions will show up here before fill.
+          </p>
+        )}
+      </section>
+
+      <section className="surface">
+        <div className="section-head">
           <h2>Needs review</h2>
           <span className="inline-note">
             {lastScan
@@ -600,6 +768,10 @@ function PopupApp() {
                 <span className="mini-label">Unsupported</span>
                 <strong>{lastFill.unsupported}</strong>
               </div>
+              <div>
+                <span className="mini-label">AI-filled</span>
+                <strong>{lastFill.aiFilled}</strong>
+              </div>
             </div>
 
             <p className="helper-line">
@@ -624,11 +796,11 @@ function PopupApp() {
       <section className="surface">
         <div className="section-head">
           <h2>Roadmap</h2>
-          <span className="inline-note">Current milestone: Step 11</span>
+          <span className="inline-note">Current milestone: Step 14</span>
         </div>
         <ul className="roadmap-list">
           {roadmap.map((item, index) => (
-            <li key={item} className={index <= 10 ? "roadmap-active" : ""}>
+            <li key={item} className={index <= 13 ? "roadmap-active" : ""}>
               {item}
             </li>
           ))}
@@ -673,7 +845,10 @@ function FillResultCard({ result }: { result: FilledFieldResult }) {
             {result.action}
           </span>
         </div>
-        <p className="match-copy">{result.matchedKey ?? "No profile key"}</p>
+        <p className="match-copy">
+          {result.matchedKey ?? "No profile key"}
+          {result.fillSource === "ai" ? " -> AI assist" : ""}
+        </p>
         <p className="helper-line">{result.message}</p>
       </div>
     </article>
@@ -683,20 +858,23 @@ function FillResultCard({ result }: { result: FilledFieldResult }) {
 function getScanStatus(
   scan: ScanSummary | null,
   readyToFill: number,
-  reviewNeeded: number
+  reviewNeeded: number,
+  aiSuggestions: number
 ) {
   if (!scan) {
     return {
       platform: "Not scanned",
       readyToFill: "0",
-      reviewNeeded: "0"
+      reviewNeeded: "0",
+      aiSuggestions: "0"
     };
   }
 
   return {
     platform: scan.platform,
     readyToFill: String(readyToFill),
-    reviewNeeded: String(reviewNeeded)
+    reviewNeeded: String(reviewNeeded),
+    aiSuggestions: String(aiSuggestions)
   };
 }
 

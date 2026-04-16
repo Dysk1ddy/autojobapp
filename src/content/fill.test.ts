@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createDefaultApplicantProfile } from "../shared/core";
+import { createDefaultApplicantProfile, createDefaultSettings } from "../shared/core";
 import { fillPage } from "./index";
 
 describe("fillPage", () => {
@@ -89,7 +89,7 @@ describe("fillPage", () => {
       href: "https://jobs.example.com/apply/review",
       title: "Review Application",
       settings: {
-        fillMode: "conservative",
+        ...createDefaultSettings(),
         autoSubmit: true
       }
     });
@@ -100,6 +100,150 @@ describe("fillPage", () => {
     expect(submitted).toBe(true);
     expect(result.fill.autoSubmitEnabled).toBe(true);
     expect(result.fill.autoSubmitted).toBe(true);
+  });
+
+  it("fills ambiguous blanks with an AI suggestion when enabled", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Short personal note
+          <textarea name="personal_note"></textarea>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ai-note",
+      title: "AI Note",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "neutral"
+      },
+      aiSuggestions: [
+        {
+          fieldId: "textarea:personal_note",
+          selectorHint: 'textarea[name="personal_note"]',
+          label: "Short personal note",
+          suggestedProfileKey: null,
+          suggestedProfileLabel: "",
+          suggestedValue:
+            "I enjoy building tools that remove friction from complex workflows and would be excited to bring that approach to this team.",
+          valuePreview:
+            "I enjoy building tools that remove friction from complex workflows...",
+          confidence: "medium",
+          reason: "The field is open-ended and the applicant profile emphasizes workflow automation."
+        }
+      ]
+    });
+
+    expect(
+      (document.querySelector('textarea[name="personal_note"]') as HTMLTextAreaElement)
+        .value
+    ).toContain("remove friction");
+    expect(result.fill.aiFilled).toBe(1);
+    expect(result.fill.results[0]?.fillSource).toBe("ai");
+  });
+
+  it("keeps AI-assisted fills review-first when fully auto is off", async () => {
+    let submitted = false;
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Short personal note
+          <textarea name="personal_note"></textarea>
+        </label>
+        <button type="submit" id="submit-application">Submit Application</button>
+      </form>
+    `;
+    document
+      .getElementById("submit-application")
+      ?.addEventListener("click", (event) => {
+        event.preventDefault();
+        submitted = true;
+      });
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ai-review",
+      title: "AI Review Step",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "neutral",
+        autoSubmit: true
+      },
+      aiSuggestions: [
+        {
+          fieldId: "textarea:personal_note",
+          selectorHint: 'textarea[name="personal_note"]',
+          label: "Short personal note",
+          suggestedProfileKey: null,
+          suggestedProfileLabel: "",
+          suggestedValue:
+            "I enjoy building tools that remove friction from complex workflows and would be excited to bring that approach to this team.",
+          valuePreview:
+            "I enjoy building tools that remove friction from complex workflows...",
+          confidence: "medium",
+          reason:
+            "The field is open-ended and the applicant profile emphasizes workflow automation."
+        }
+      ]
+    });
+
+    expect(submitted).toBe(false);
+    expect(result.fill.autoSubmitted).toBe(false);
+    expect(result.fill.autoSubmitMessage).toContain("unless fully auto is enabled");
+  });
+
+  it("auto-submits AI-assisted fills when fully auto is enabled", async () => {
+    let submitted = false;
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Short personal note
+          <textarea name="personal_note"></textarea>
+        </label>
+        <button type="submit" id="submit-application">Submit Application</button>
+      </form>
+    `;
+    document
+      .getElementById("submit-application")
+      ?.addEventListener("click", (event) => {
+        event.preventDefault();
+        submitted = true;
+      });
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ai-fully-auto",
+      title: "AI Fully Auto Step",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "neutral",
+        autoSubmit: true,
+        fullyAutoEnabled: true
+      },
+      aiSuggestions: [
+        {
+          fieldId: "textarea:personal_note",
+          selectorHint: 'textarea[name="personal_note"]',
+          label: "Short personal note",
+          suggestedProfileKey: null,
+          suggestedProfileLabel: "",
+          suggestedValue:
+            "I enjoy building tools that remove friction from complex workflows and would be excited to bring that approach to this team.",
+          valuePreview:
+            "I enjoy building tools that remove friction from complex workflows...",
+          confidence: "medium",
+          reason:
+            "The field is open-ended and the applicant profile emphasizes workflow automation."
+        }
+      ]
+    });
+
+    expect(submitted).toBe(true);
+    expect(result.fill.autoSubmitted).toBe(true);
+    expect(result.fill.aiFilled).toBe(1);
   });
 });
 

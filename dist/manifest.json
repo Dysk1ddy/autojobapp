@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "A privacy-first scaffold for job application form scanning and future autofill workflows.",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["https://api.openai.com/*"],
   "action": {
     "default_title": "AutoJobApp",
     "default_popup": "popup.html"

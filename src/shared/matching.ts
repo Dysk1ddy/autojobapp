@@ -449,6 +449,10 @@ export function resolveProfileFieldValue(
   return definition?.getValue(profile, entryIndex) ?? emptyValue();
 }
 
+export function getProfileFieldLabel(key: ProfileFieldKey): string {
+  return FIELD_DEFINITIONS.find((field) => field.key === key)?.label ?? key;
+}
+
 export function isRepeatableProfileFieldKey(key: ProfileFieldKey): boolean {
   return (
     key.startsWith("education.") ||

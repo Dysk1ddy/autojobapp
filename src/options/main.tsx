@@ -23,9 +23,11 @@ import {
   getFillModeDescription,
   getFillModeLabel,
   getActiveProfile,
+  parseApplicantProfileJson,
   readState,
   resetStoredState,
   saveActiveProfileAndSettingsInStorage,
+  serializeApplicantProfile,
   shouldFillConfidence,
   summarizeApplicantProfile,
   toErrorMessage,
@@ -70,6 +72,8 @@ function OptionsApp() {
   const [resumeImportText, setResumeImportText] = useState("");
   const [resumeImportFile, setResumeImportFile] = useState<File | null>(null);
   const [resumeImportFileInputKey, setResumeImportFileInputKey] = useState(0);
+  const [profileImportFile, setProfileImportFile] = useState<File | null>(null);
+  const [profileImportFileInputKey, setProfileImportFileInputKey] = useState(0);
   const [status, setStatus] = useState("Loading settings...");
   const [busy, setBusy] = useState(false);
 
@@ -252,6 +256,76 @@ function OptionsApp() {
       ...settings,
       autoSubmit: value
     }));
+  }
+
+  function updateFullyAutoEnabled(value: boolean) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      fullyAutoEnabled: value
+    }));
+  }
+
+  function updateAiAssistEnabled(value: boolean) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      aiAssistEnabled: value
+    }));
+  }
+
+  function updateOpenAiApiKey(value: string) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      openAiApiKey: value
+    }));
+  }
+
+  function handleProfileImportSelection(event: ChangeEvent<HTMLInputElement>) {
+    setProfileImportFile(event.target.files?.[0] ?? null);
+  }
+
+  async function handleProfileJsonImport() {
+    if (!draftProfile || !profileImportFile) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`Importing ${profileImportFile.name} into the draft profile...`);
+
+    try {
+      const importedJson = await profileImportFile.text();
+      const importedProfile = parseApplicantProfileJson(
+        importedJson,
+        draftProfile
+      );
+
+      setDraftProfile(cloneProfile(importedProfile));
+      setProfileImportFile(null);
+      setProfileImportFileInputKey((current) => current + 1);
+      setStatus(
+        `${profileImportFile.name} was loaded into the draft profile. Save changes to keep it.`
+      );
+    } catch (error) {
+      setStatus(`Profile import failed: ${toErrorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function clearProfileImportFile() {
+    setProfileImportFile(null);
+    setProfileImportFileInputKey((current) => current + 1);
+    setStatus("Cleared the selected profile JSON backup.");
+  }
+
+  function handleProfileJsonExport() {
+    const profileToExport = cloneProfile(draftProfile ?? activeProfile);
+    const json = serializeApplicantProfile(profileToExport);
+    const fileName = createProfileBackupFileName(profileToExport.label);
+
+    downloadTextFile(fileName, json, "application/json");
+    setStatus(
+      `Exported ${profileToExport.label} as ${fileName}. Keep that file somewhere safe as your profile backup.`
+    );
   }
 
   async function handleResumeImport() {
@@ -509,14 +583,16 @@ function OptionsApp() {
     <main className="page-shell options-shell">
       <section className="surface hero-card wide-hero">
         <div className="hero-copy">
-          <span className="eyebrow">Step 11 settings, resume upload, and automation flow</span>
+          <span className="eyebrow">Step 14 AI assist, fully auto, and workflow control</span>
           <h1>Edit what gets filled before you ever touch submit.</h1>
           <p>
             The options page now works like a real drafting workspace instead of
             a raw JSON viewer. You can update the active applicant profile,
             change how aggressive autofill should be, opt into final-step
-            auto-submit, upload a saved resume reference, import resume files or
-            pasted text into the draft profile with on-demand parsers, and
+            auto-submit, enable AI-assisted autofill with your own OpenAI API
+            key, decide whether AI-assisted fills must stay review-first or can
+            run fully auto, upload a saved resume reference, import resume files
+            or pasted text into the draft profile with on-demand parsers, and
             inspect both ATS adapter behavior and multi-step application flow.
           </p>
         </div>
@@ -570,6 +646,76 @@ function OptionsApp() {
             Reset stored profile
           </button>
         </div>
+      </section>
+
+      <section className="surface">
+        <div className="section-head">
+          <h2>Profile backup</h2>
+          <span className="inline-note">
+            Import or export the active applicant profile as JSON
+          </span>
+        </div>
+
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="profile-json-input">Profile JSON backup</label>
+            <input
+              id="profile-json-input"
+              key={profileImportFileInputKey}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleProfileImportSelection}
+            />
+            <p className="helper-line">
+              Import accepts either a raw applicant profile export or a full
+              extension-state JSON backup.
+            </p>
+          </div>
+        </div>
+
+        <div className="button-row">
+          <button
+            className="button"
+            disabled={busy}
+            onClick={handleProfileJsonExport}
+          >
+            Export current draft JSON
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={busy || !draftProfile || !profileImportFile}
+            onClick={handleProfileJsonImport}
+          >
+            {busy ? "Working..." : "Import selected JSON"}
+          </button>
+          <button
+            className="button button-ghost"
+            disabled={busy || !profileImportFile}
+            onClick={clearProfileImportFile}
+          >
+            Clear selected JSON
+          </button>
+        </div>
+
+        <div className="mini-grid">
+          <div>
+            <span className="mini-label">Selected backup</span>
+            <strong>{profileImportFile ? profileImportFile.name : "None"}</strong>
+          </div>
+          <div>
+            <span className="mini-label">Export source</span>
+            <strong>{draftProfile?.label ?? activeProfile.label}</strong>
+          </div>
+          <div>
+            <span className="mini-label">Restore behavior</span>
+            <strong>Draft only until saved</strong>
+          </div>
+        </div>
+
+        <p className="muted">
+          Import does not overwrite storage immediately. It replaces the current
+          draft profile, then waits for you to click <strong>Save profile changes</strong>.
+        </p>
       </section>
 
       <section className="surface">
@@ -639,6 +785,28 @@ function OptionsApp() {
             checked={draftSettings.autoSubmit}
             onChange={updateAutoSubmit}
           />
+
+          <CheckboxField
+            label="Fully auto AI autofill"
+            checked={draftSettings.fullyAutoEnabled}
+            helper="Turns off the default AI review safeguard. If auto-submit and AI assist are both enabled, AI-filled pages may go straight to the final submit control."
+            onChange={updateFullyAutoEnabled}
+          />
+
+          <CheckboxField
+            label="Enable AI-assisted autofill"
+            checked={draftSettings.aiAssistEnabled}
+            onChange={updateAiAssistEnabled}
+          />
+
+          <TextField
+            className="field-span-2"
+            label="OpenAI API key"
+            value={draftSettings.openAiApiKey}
+            type="password"
+            helper="Saved in local extension storage so the background worker can request AI suggestions. This is convenient for local use, but still less secure than routing requests through your own backend."
+            onChange={updateOpenAiApiKey}
+          />
         </div>
 
         <div className="mini-grid">
@@ -651,11 +819,29 @@ function OptionsApp() {
             <strong>{draftSettings.autoSubmit ? "Enabled" : "Disabled"}</strong>
           </div>
           <div>
+            <span className="mini-label">AI assist</span>
+            <strong>{draftSettings.aiAssistEnabled ? "Enabled" : "Disabled"}</strong>
+          </div>
+          <div>
+            <span className="mini-label">Fully auto</span>
+            <strong>{draftSettings.fullyAutoEnabled ? "Enabled" : "Disabled"}</strong>
+          </div>
+          <div>
+            <span className="mini-label">API key</span>
+            <strong>{draftSettings.openAiApiKey.trim() ? "Saved locally" : "Not saved"}</strong>
+          </div>
+          <div>
+            <span className="mini-label">AI model</span>
+            <strong>{draftSettings.aiAssistModel}</strong>
+          </div>
+          <div>
             <span className="mini-label">Safety note</span>
             <strong>
-              {draftSettings.autoSubmit
-                ? "Final submit only"
-                : "Manual review first"}
+              {draftSettings.fullyAutoEnabled
+                ? "AI review guard off"
+                : draftSettings.autoSubmit
+                  ? "Final submit only"
+                  : "Manual review first"}
             </strong>
           </div>
         </div>
@@ -665,6 +851,18 @@ function OptionsApp() {
           after a fill run. It does not click generic continue or next-step
           buttons.
         </p>
+        <p className="helper-line">
+          AI assist only runs when you trigger a scan or fill. It sends reduced
+          field context plus your saved profile data to OpenAI to suggest values
+          for ambiguous blanks, and it blocks auto-submit if any AI suggestion
+          was used to fill the page unless fully auto is enabled.
+        </p>
+        {draftSettings.fullyAutoEnabled ? (
+          <p className="helper-line">
+            Fully auto is enabled. AI-assisted fills can now bypass the normal
+            review-before-submit safeguard.
+          </p>
+        ) : null}
       </section>
 
       <section className="surface">
@@ -1865,6 +2063,10 @@ function OptionsApp() {
                   {state.lastFill.unsupported + state.lastFill.errors}
                 </strong>
               </article>
+              <article className="stat-card">
+                <span className="stat-label">AI-filled</span>
+                <strong>{state.lastFill.aiFilled}</strong>
+              </article>
             </div>
 
             <div className="match-list">
@@ -1881,6 +2083,7 @@ function OptionsApp() {
                     </div>
                     <p className="match-copy">
                       {result.matchedKey ?? "No profile key"}
+                      {result.fillSource === "ai" ? " -> AI assist" : ""}
                     </p>
                     <p className="helper-line">{result.message}</p>
                   </div>
@@ -1983,6 +2186,75 @@ function OptionsApp() {
 
       <section className="surface">
         <div className="section-head">
+          <h2>Latest AI assist</h2>
+          <span className="inline-note">
+            {state.lastScan
+              ? state.lastScan.aiAssist.message
+              : "No pages scanned yet"}
+          </span>
+        </div>
+
+        {state.lastScan ? (
+          <>
+            <div className="stat-grid">
+              <article className="stat-card">
+                <span className="stat-label">AI status</span>
+                <strong>{state.lastScan.aiAssist.status}</strong>
+              </article>
+              <article className="stat-card">
+                <span className="stat-label">Suggestions</span>
+                <strong>{state.lastScan.aiAssist.suggestions.length}</strong>
+              </article>
+              <article className="stat-card">
+                <span className="stat-label">Model</span>
+                <strong>{state.lastScan.aiAssist.model}</strong>
+              </article>
+            </div>
+
+            {state.lastScan.aiAssist.suggestions.length > 0 ? (
+              <div className="match-list">
+                {state.lastScan.aiAssist.suggestions.slice(0, 12).map((suggestion) => (
+                  <article key={suggestion.fieldId} className="match-row">
+                    <div className="match-main">
+                      <div className="match-title-row">
+                        <strong className="match-title">
+                          {suggestion.label || suggestion.selectorHint}
+                        </strong>
+                        <span
+                          className={`confidence-pill confidence-${suggestion.confidence}`}
+                        >
+                          {suggestion.confidence}
+                        </span>
+                      </div>
+                      <p className="match-copy">
+                        {suggestion.suggestedProfileLabel || "Generated answer"}
+                        {suggestion.suggestedProfileKey
+                          ? ` -> ${suggestion.suggestedProfileKey}`
+                          : ""}
+                      </p>
+                      <p className="helper-line">
+                        {suggestion.valuePreview} | {suggestion.reason}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">
+                When AI assist is enabled and the scan finds ambiguous blank
+                fields, suggestions will show up here for review.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="muted">
+            Run a scan from the popup to inspect the last AI assistance pass.
+          </p>
+        )}
+      </section>
+
+      <section className="surface">
+        <div className="section-head">
           <h2>What exists today</h2>
           <span className="inline-note">Settings, uploads, workflows, and autofill</span>
         </div>
@@ -1991,7 +2263,10 @@ function OptionsApp() {
             The options page now edits the active applicant profile directly
           </li>
           <li className="roadmap-active">
-            Fill mode and auto-submit are now saved extension settings
+            Fill mode, auto-submit, and the fully auto override are now saved extension settings
+          </li>
+          <li className="roadmap-active">
+            AI-assisted autofill can now be enabled with a saved OpenAI API key
           </li>
           <li className="roadmap-active">
             A resume file can now be linked as the saved resume for the active
@@ -2189,6 +2464,34 @@ function createDocumentReferenceFromFile(
     source,
     lastUpdatedAt: new Date().toISOString()
   };
+}
+
+function createProfileBackupFileName(label: string): string {
+  const safeLabel = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "autojobapp-profile";
+  const dateStamp = new Date().toISOString().slice(0, 10);
+
+  return `${safeLabel}-${dateStamp}.profile.json`;
+}
+
+function downloadTextFile(
+  fileName: string,
+  text: string,
+  mimeType: string
+) {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  link.click();
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 createRoot(document.getElementById("root")!).render(<OptionsApp />);

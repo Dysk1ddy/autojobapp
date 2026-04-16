@@ -22,6 +22,13 @@ export type MatchConfidence = "high" | "medium" | "low" | "unmatched";
 export type FillMode = "conservative" | "neutral" | "liberal";
 export type FieldElementTag = "input" | "textarea" | "select";
 export type FillAction = "filled" | "skipped" | "unsupported" | "error";
+export type FillSource = "profile" | "ai" | "none";
+export type AiAssistStatus =
+  | "disabled"
+  | "missing_api_key"
+  | "no_candidates"
+  | "completed"
+  | "error";
 
 export const PROFILE_FIELD_KEYS = [
   "personal.fullName",
@@ -107,6 +114,7 @@ export interface FilledFieldResult {
   matchedKey: ProfileFieldKey | null;
   confidence: MatchConfidence;
   action: FillAction;
+  fillSource: FillSource;
   valuePreview: string;
   message: string;
 }
@@ -117,12 +125,35 @@ export interface FillSummary {
   skipped: number;
   unsupported: number;
   errors: number;
+  aiFilled: number;
   strategy: FillMode;
   autoSubmitEnabled: boolean;
   autoSubmitted: boolean;
   autoSubmitMessage: string;
   results: FilledFieldResult[];
   filledAt: string;
+}
+
+export interface AiFieldSuggestion {
+  fieldId: string;
+  selectorHint: string;
+  label: string;
+  suggestedProfileKey: ProfileFieldKey | null;
+  suggestedProfileLabel: string;
+  suggestedValue: string;
+  valuePreview: string;
+  confidence: MatchConfidence;
+  reason: string;
+}
+
+export interface AiAssistSummary {
+  enabled: boolean;
+  configured: boolean;
+  model: string;
+  status: AiAssistStatus;
+  message: string;
+  suggestions: AiFieldSuggestion[];
+  generatedAt: string;
 }
 
 export interface ScanSummary {
@@ -143,6 +174,7 @@ export interface ScanSummary {
   jobSignals: string[];
   fieldMatches: DetectedFieldMatch[];
   matchBreakdown: FieldMatchBreakdown;
+  aiAssist: AiAssistSummary;
   scannedAt: string;
 }
 
@@ -275,6 +307,10 @@ export interface AnswerTemplate {
 export interface ExtensionSettings {
   fillMode: FillMode;
   autoSubmit: boolean;
+  fullyAutoEnabled: boolean;
+  aiAssistEnabled: boolean;
+  openAiApiKey: string;
+  aiAssistModel: string;
 }
 
 export interface ApplicantProfile {
@@ -344,6 +380,7 @@ export type ContentRequest = {
   type: "JOB_APP_FILL_PAGE";
   profile: ApplicantProfile;
   settings: ExtensionSettings;
+  aiSuggestions?: AiFieldSuggestion[];
 };
 
 export type ContentResponse =
@@ -351,8 +388,9 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 10;
 export const DEFAULT_PROFILE_ID = "primary-profile";
+export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
 export const defaultState: StoredState = createDefaultState();
 
@@ -375,7 +413,26 @@ export function createDefaultState(): StoredState {
 export function createDefaultSettings(): ExtensionSettings {
   return {
     fillMode: "conservative",
-    autoSubmit: false
+    autoSubmit: false,
+    fullyAutoEnabled: false,
+    aiAssistEnabled: false,
+    openAiApiKey: "",
+    aiAssistModel: DEFAULT_AI_ASSIST_MODEL
+  };
+}
+
+export function createDefaultAiAssistSummary(
+  overrides: Partial<AiAssistSummary> = {}
+): AiAssistSummary {
+  return {
+    enabled: false,
+    configured: false,
+    model: DEFAULT_AI_ASSIST_MODEL,
+    status: "disabled",
+    message: "AI-assisted autofill is disabled.",
+    suggestions: [],
+    generatedAt: createTimestamp(),
+    ...overrides
   };
 }
 
@@ -714,6 +771,42 @@ export function getActiveProfile(state: StoredState): ApplicantProfile {
     state.profiles[0] ??
     createDefaultApplicantProfile()
   );
+}
+
+export function parseApplicantProfileJson(
+  jsonText: string,
+  fallback: ApplicantProfile = createDefaultApplicantProfile()
+): ApplicantProfile {
+  const parsed = JSON.parse(jsonText) as unknown;
+  return normalizeImportedApplicantProfile(parsed, fallback);
+}
+
+export function normalizeImportedApplicantProfile(
+  raw: unknown,
+  fallback: ApplicantProfile = createDefaultApplicantProfile()
+): ApplicantProfile {
+  const record = asRecord(raw);
+
+  if (record) {
+    if ("profile" in record) {
+      return normalizeApplicantProfile(record.profile, fallback);
+    }
+
+    if ("profiles" in record) {
+      return getActiveProfile(normalizeStoredState(record));
+    }
+  }
+
+  return normalizeApplicantProfile(raw, fallback);
+}
+
+export function serializeApplicantProfile(profile: ApplicantProfile): string {
+  const normalized = normalizeApplicantProfile(
+    profile,
+    createDefaultApplicantProfile(profile.id, profile.label || "Imported profile")
+  );
+
+  return JSON.stringify(normalized, null, 2);
 }
 
 export function getFillModeLabel(fillMode: FillMode): string {
@@ -1242,6 +1335,7 @@ function normalizeScanSummary(raw: unknown): ScanSummary | null {
     jobSignals: readStringArray(record.jobSignals),
     fieldMatches: normalizeDetectedFieldMatches(record.fieldMatches),
     matchBreakdown: normalizeFieldMatchBreakdown(record.matchBreakdown),
+    aiAssist: normalizeAiAssistSummary(record.aiAssist),
     scannedAt: readString(record.scannedAt, createTimestamp())
   };
 }
@@ -1316,6 +1410,7 @@ function normalizeFillSummary(raw: unknown): FillSummary | null {
     skipped: readNumber(record.skipped),
     unsupported: readNumber(record.unsupported),
     errors: readNumber(record.errors),
+    aiFilled: readNumber(record.aiFilled),
     strategy: normalizeFillMode(record.strategy),
     autoSubmitEnabled: readBoolean(record.autoSubmitEnabled, false),
     autoSubmitted: readBoolean(record.autoSubmitted, false),
@@ -1333,7 +1428,17 @@ function normalizeExtensionSettings(
 
   return {
     fillMode: normalizeFillMode(record?.fillMode, fallback.fillMode),
-    autoSubmit: readBoolean(record?.autoSubmit, fallback.autoSubmit)
+    autoSubmit: readBoolean(record?.autoSubmit, fallback.autoSubmit),
+    fullyAutoEnabled: readBoolean(
+      record?.fullyAutoEnabled,
+      fallback.fullyAutoEnabled
+    ),
+    aiAssistEnabled: readBoolean(
+      record?.aiAssistEnabled,
+      fallback.aiAssistEnabled
+    ),
+    openAiApiKey: readString(record?.openAiApiKey, fallback.openAiApiKey),
+    aiAssistModel: readString(record?.aiAssistModel, fallback.aiAssistModel)
   };
 }
 
@@ -1356,6 +1461,43 @@ function normalizeResumeImportSummary(raw: unknown): ResumeImportSummary | null 
   };
 }
 
+function normalizeAiAssistSummary(raw: unknown): AiAssistSummary {
+  const record = asRecord(raw);
+  const fallback = createDefaultAiAssistSummary();
+
+  return {
+    enabled: readBoolean(record?.enabled, fallback.enabled),
+    configured: readBoolean(record?.configured, fallback.configured),
+    model: readString(record?.model, fallback.model),
+    status: normalizeAiAssistStatus(record?.status),
+    message: readString(record?.message, fallback.message),
+    suggestions: normalizeAiFieldSuggestions(record?.suggestions),
+    generatedAt: readString(record?.generatedAt, createTimestamp())
+  };
+}
+
+function normalizeAiFieldSuggestions(raw: unknown): AiFieldSuggestion[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.map((item, index) => {
+    const record = asRecord(item);
+
+    return {
+      fieldId: readString(record?.fieldId, `ai-field-${index + 1}`),
+      selectorHint: readString(record?.selectorHint),
+      label: readString(record?.label),
+      suggestedProfileKey: normalizeProfileFieldKey(record?.suggestedProfileKey),
+      suggestedProfileLabel: readString(record?.suggestedProfileLabel),
+      suggestedValue: readString(record?.suggestedValue),
+      valuePreview: readString(record?.valuePreview),
+      confidence: normalizeMatchConfidence(record?.confidence),
+      reason: readString(record?.reason)
+    };
+  });
+}
+
 function normalizeFilledFieldResults(raw: unknown): FilledFieldResult[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -1371,6 +1513,7 @@ function normalizeFilledFieldResults(raw: unknown): FilledFieldResult[] {
       matchedKey: normalizeProfileFieldKey(record?.matchedKey),
       confidence: normalizeMatchConfidence(record?.confidence),
       action: normalizeFillAction(record?.action),
+      fillSource: normalizeFillSource(record?.fillSource),
       valuePreview: readString(record?.valuePreview),
       message: readString(record?.message)
     };
@@ -1540,6 +1683,30 @@ function normalizeFillAction(value: unknown): FillAction {
       return value;
     default:
       return "skipped";
+  }
+}
+
+function normalizeFillSource(value: unknown): FillSource {
+  switch (value) {
+    case "profile":
+    case "ai":
+    case "none":
+      return value;
+    default:
+      return "none";
+  }
+}
+
+function normalizeAiAssistStatus(value: unknown): AiAssistStatus {
+  switch (value) {
+    case "disabled":
+    case "missing_api_key":
+    case "no_candidates":
+    case "completed":
+    case "error":
+      return value;
+    default:
+      return "disabled";
   }
 }
 

@@ -1,9 +1,12 @@
 import {
+  AiAssistSummary,
   ContentRequest,
   ContentResponse,
+  ScanSummary,
   duplicateActiveProfileInStorage,
   RuntimeRequest,
   RuntimeResponse,
+  createDefaultAiAssistSummary,
   ensureState,
   getActiveProfile,
   isScannableUrl,
@@ -14,6 +17,7 @@ import {
   toErrorMessage,
   writeState
 } from "../shared/core";
+import { generateAiAssistSummary } from "../shared/ai";
 
 chrome.runtime.onInstalled.addListener(() => {
   void ensureState();
@@ -115,16 +119,14 @@ async function scanActiveTab(): Promise<RuntimeResponse> {
   });
 
   const state = await readState();
+  const profile = getActiveProfile(state);
   const contentRequest: ContentRequest = {
     type: "JOB_APP_SCAN_PAGE",
-    profile: getActiveProfile(state),
+    profile,
     settings: state.settings
   };
 
-  const response = (await chrome.tabs.sendMessage(
-    tab.id,
-    contentRequest
-  )) as ContentResponse;
+  const response = await sendContentMessage(tab.id, contentRequest);
 
   if (!response.ok || !response.scan) {
     return {
@@ -135,9 +137,16 @@ async function scanActiveTab(): Promise<RuntimeResponse> {
     };
   }
 
+  const aiAssist = await maybeGenerateAiAssist(
+    response.scan,
+    profile,
+    state.settings
+  );
+  const scan = attachAiAssistToScan(response.scan, aiAssist);
+
   const nextState = {
     ...state,
-    lastScan: response.scan,
+    lastScan: scan,
     lastUpdatedAt: new Date().toISOString()
   };
 
@@ -146,7 +155,7 @@ async function scanActiveTab(): Promise<RuntimeResponse> {
   return {
     ok: true,
     state: nextState,
-    scan: response.scan
+    scan
   };
 }
 
@@ -176,16 +185,37 @@ async function fillActiveTab(): Promise<RuntimeResponse> {
   });
 
   const state = await readState();
-  const contentRequest: ContentRequest = {
-    type: "JOB_APP_FILL_PAGE",
-    profile: getActiveProfile(state),
+  const profile = getActiveProfile(state);
+  const scanRequest: ContentRequest = {
+    type: "JOB_APP_SCAN_PAGE",
+    profile,
     settings: state.settings
   };
 
-  const response = (await chrome.tabs.sendMessage(
-    tab.id,
-    contentRequest
-  )) as ContentResponse;
+  const scanResponse = await sendContentMessage(tab.id, scanRequest);
+
+  if (!scanResponse.ok || !scanResponse.scan) {
+    return {
+      ok: false,
+      error: scanResponse.ok
+        ? "The page did not return a scan result before autofill."
+        : scanResponse.error
+    };
+  }
+
+  const aiAssist = await maybeGenerateAiAssist(
+    scanResponse.scan,
+    profile,
+    state.settings
+  );
+  const contentRequest: ContentRequest = {
+    type: "JOB_APP_FILL_PAGE",
+    profile,
+    settings: state.settings,
+    aiSuggestions: aiAssist.suggestions
+  };
+
+  const response = await sendContentMessage(tab.id, contentRequest);
 
   if (!response.ok || !response.fill) {
     return {
@@ -196,9 +226,10 @@ async function fillActiveTab(): Promise<RuntimeResponse> {
     };
   }
 
+  const scan = attachAiAssistToScan(response.scan ?? scanResponse.scan, aiAssist);
   const nextState = {
     ...state,
-    lastScan: response.scan ?? state.lastScan,
+    lastScan: scan,
     lastFill: response.fill,
     lastUpdatedAt: new Date().toISOString()
   };
@@ -208,7 +239,49 @@ async function fillActiveTab(): Promise<RuntimeResponse> {
   return {
     ok: true,
     state: nextState,
-    scan: response.scan,
+    scan,
     fill: response.fill
   };
+}
+
+async function maybeGenerateAiAssist(
+  scan: ScanSummary,
+  profile: ReturnType<typeof getActiveProfile>,
+  settings: Awaited<ReturnType<typeof readState>>["settings"]
+): Promise<AiAssistSummary> {
+  return generateAiAssistSummary(scan, profile, settings);
+}
+
+function attachAiAssistToScan(
+  scan: ScanSummary,
+  aiAssist: AiAssistSummary
+): ScanSummary {
+  return {
+    ...scan,
+    aiAssist
+  };
+}
+
+async function sendContentMessage(
+  tabId: number,
+  request: ContentRequest
+): Promise<ContentResponse> {
+  try {
+    return (await chrome.tabs.sendMessage(tabId, request)) as ContentResponse;
+  } catch (error) {
+    const message = toErrorMessage(error);
+
+    if (!message.includes("Receiving end does not exist")) {
+      throw error;
+    }
+
+    await delay(120);
+    return (await chrome.tabs.sendMessage(tabId, request)) as ContentResponse;
+  }
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }

@@ -99,11 +99,13 @@ export function CheckboxField({
   label,
   checked,
   onChange,
+  helper,
   className
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  helper?: string;
   className?: string;
 }) {
   return (
@@ -114,6 +116,7 @@ export function CheckboxField({
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className="field-label">{label}</span>
+      {helper ? <span className="field-helper">{helper}</span> : null}
     </label>
   );
 }
