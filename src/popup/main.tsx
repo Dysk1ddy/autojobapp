@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../styles/global.css";
 import {
+  AiAssistScope,
   DetectedFieldMatch,
   FillMode,
   FilledFieldResult,
   RuntimeResponse,
   ScanSummary,
   StoredState,
+  getAiAssistScopeDescription,
+  getAiAssistScopeLabel,
   getActiveProfile,
   getFillModeDescription,
   getFillModeLabel,
@@ -30,7 +33,8 @@ const roadmap = [
   "Step 11: fill modes, auto-submit, and saved resume upload",
   "Step 12: profile backup import and export",
   "Step 13: AI-assisted autofill",
-  "Step 14: fully auto AI override"
+  "Step 14: fully auto AI override",
+  "Step 15: expanded AI controls"
 ];
 
 function PopupApp() {
@@ -48,6 +52,9 @@ function PopupApp() {
   const autoSubmitEnabled = state?.settings.autoSubmit ?? false;
   const fullyAutoEnabled = state?.settings.fullyAutoEnabled ?? false;
   const aiAssistEnabled = state?.settings.aiAssistEnabled ?? false;
+  const aiAssistScope = state?.settings.aiAssistScope ?? "focused";
+  const aiPreferGeneratedValues =
+    state?.settings.aiPreferGeneratedValues ?? false;
   const aiAssistConfigured = Boolean(state?.settings.openAiApiKey?.trim());
   const activeProfile = useMemo(
     () => (state ? getActiveProfile(state) : null),
@@ -258,6 +265,67 @@ function PopupApp() {
     }
   }
 
+  async function updateAiAssistScope(nextAiAssistScope: AiAssistScope) {
+    if (!state || nextAiAssistScope === state.settings.aiAssistScope) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`Switching AI control scope to ${getAiAssistScopeLabel(nextAiAssistScope)}...`);
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "UPDATE_SETTINGS",
+        settings: {
+          aiAssistScope: nextAiAssistScope
+        }
+      });
+      handleStateResponse(
+        response,
+        response.ok
+          ? `${getAiAssistScopeLabel(nextAiAssistScope)} AI scope saved.`
+          : status
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateAiPriority(nextAiPreferGeneratedValues: boolean) {
+    if (
+      !state ||
+      nextAiPreferGeneratedValues === state.settings.aiPreferGeneratedValues
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setStatus(
+      nextAiPreferGeneratedValues
+        ? "Letting AI suggestions take priority over saved profile values..."
+        : "Restoring saved profile values as the first choice..."
+    );
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "UPDATE_SETTINGS",
+        settings: {
+          aiPreferGeneratedValues: nextAiPreferGeneratedValues
+        }
+      });
+      handleStateResponse(
+        response,
+        response.ok
+          ? nextAiPreferGeneratedValues
+            ? "AI suggestions now take priority when both AI and the saved profile have a value."
+            : "Saved profile values now take priority again."
+          : status
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function updateAiAssist(nextAiAssistEnabled: boolean) {
     if (!state || nextAiAssistEnabled === state.settings.aiAssistEnabled) {
       return;
@@ -315,9 +383,9 @@ function PopupApp() {
           <span className="eyebrow">AutoJobApp</span>
           <h1>Preview first. Fill second.</h1>
           <p>
-            Step 14 keeps AI-assisted suggestions in place while letting you
-            explicitly opt into a fully auto path when you want to bypass the
-            default AI review safeguard.
+            Step 15 adds more direct AI control so you can choose how widely the
+            model participates and whether saved profile values or AI suggestions
+            should win when both are available.
           </p>
         </div>
         <div className="badge-row">
@@ -329,6 +397,9 @@ function PopupApp() {
           </span>
           <span className="badge">
             {aiAssistEnabled ? "AI assist on" : "AI assist off"}
+          </span>
+          <span className="badge">
+            AI scope: {getAiAssistScopeLabel(aiAssistScope)}
           </span>
           <span className="badge">
             {fullyAutoEnabled ? "Fully auto on" : "Fully auto off"}
@@ -440,6 +511,35 @@ function PopupApp() {
             <span className="field-label">Enable AI assist</span>
           </label>
 
+          <label className="field">
+            <span className="field-label">AI control scope</span>
+            <select
+              className="field-control"
+              disabled={busy}
+              value={aiAssistScope}
+              onChange={(event) =>
+                void updateAiAssistScope(event.target.value as AiAssistScope)
+              }
+            >
+              <option value="focused">Focused</option>
+              <option value="expanded">Expanded</option>
+              <option value="aggressive">Aggressive</option>
+            </select>
+            <span className="field-helper">
+              {getAiAssistScopeDescription(aiAssistScope)}
+            </span>
+          </label>
+
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={aiPreferGeneratedValues}
+              disabled={busy}
+              onChange={(event) => void updateAiPriority(event.target.checked)}
+            />
+            <span className="field-label">Prefer AI-generated values</span>
+          </label>
+
           <label className="toggle-field">
             <input
               type="checkbox"
@@ -457,8 +557,13 @@ function PopupApp() {
         </p>
         <p className="helper-line">
           AI assist uses your saved OpenAI API key from options, suggests values
-          for ambiguous blanks, and keeps AI-assisted submits review-first by
-          default.
+          based on the selected AI control scope, and keeps AI-assisted submits
+          review-first by default.
+        </p>
+        <p className="helper-line">
+          {aiPreferGeneratedValues
+            ? "AI suggestions currently take priority when both AI and the saved profile have a value."
+            : "Saved profile values currently take priority when both AI and the model have a value."}
         </p>
         <p className="helper-line">
           Fully auto disables that AI review safeguard. When both auto-submit
@@ -796,11 +901,11 @@ function PopupApp() {
       <section className="surface">
         <div className="section-head">
           <h2>Roadmap</h2>
-          <span className="inline-note">Current milestone: Step 14</span>
+          <span className="inline-note">Current milestone: Step 15</span>
         </div>
         <ul className="roadmap-list">
           {roadmap.map((item, index) => (
-            <li key={item} className={index <= 13 ? "roadmap-active" : ""}>
+            <li key={item} className={index <= 14 ? "roadmap-active" : ""}>
               {item}
             </li>
           ))}

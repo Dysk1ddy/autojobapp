@@ -229,7 +229,7 @@ export async function fillPage(
       groupByFieldId.get(match.fieldId),
       profile,
       repeatEntryIndexByFieldId.get(match.fieldId) ?? 0,
-      settings.fillMode,
+      settings,
       aiSuggestionByFieldId.get(match.fieldId)
     )
   );
@@ -643,7 +643,7 @@ function fillMatchedGroup(
   group: CandidateGroup | undefined,
   profile: ApplicantProfile,
   repeatEntryIndex: number,
-  fillMode: FillMode,
+  settings: ExtensionSettings,
   aiSuggestion?: AiFieldSuggestion
 ): FilledFieldResult {
   if (!group) {
@@ -655,9 +655,12 @@ function fillMatchedGroup(
     );
   }
 
-  const profileSuggestionAllowed = shouldFillConfidence(match.confidence, fillMode);
+  const profileSuggestionAllowed = shouldFillConfidence(
+    match.confidence,
+    settings.fillMode
+  );
   const aiSuggestionAllowed = aiSuggestion
-    ? shouldFillConfidence(aiSuggestion.confidence, fillMode)
+    ? shouldFillConfidence(aiSuggestion.confidence, settings.fillMode)
     : false;
   const profileResolvedValue =
     match.matchedKey
@@ -666,7 +669,7 @@ function fillMatchedGroup(
   const aiResolvedValue = aiSuggestion
     ? createAiResolvedValue(aiSuggestion)
     : null;
-  const fillTarget =
+  const profileTarget =
     profileSuggestionAllowed &&
     match.matchedKey &&
     profileResolvedValue?.hasValue &&
@@ -677,17 +680,22 @@ function fillMatchedGroup(
           confidence: match.confidence,
           resolvedValue: profileResolvedValue
         }
-      : aiSuggestionAllowed &&
-          aiSuggestion &&
-          aiResolvedValue?.hasValue &&
-          aiResolvedValue.raw !== null
-        ? {
-            source: "ai" as const,
-            matchedKey: aiSuggestion.suggestedProfileKey,
-            confidence: aiSuggestion.confidence,
-            resolvedValue: aiResolvedValue
-          }
-        : null;
+      : null;
+  const aiTarget =
+    aiSuggestionAllowed &&
+    aiSuggestion &&
+    aiResolvedValue?.hasValue &&
+    aiResolvedValue.raw !== null
+      ? {
+          source: "ai" as const,
+          matchedKey: aiSuggestion.suggestedProfileKey,
+          confidence: aiSuggestion.confidence,
+          resolvedValue: aiResolvedValue
+        }
+      : null;
+  const fillTarget = settings.aiPreferGeneratedValues
+    ? aiTarget ?? profileTarget
+    : profileTarget ?? aiTarget;
 
   if (!fillTarget) {
     if (!profileSuggestionAllowed && !aiSuggestionAllowed) {
@@ -695,7 +703,7 @@ function fillMatchedGroup(
         match,
         "skipped",
         aiSuggestion?.valuePreview || match.matchedValuePreview,
-        getFillSkipMessage(fillMode)
+        getFillSkipMessage(settings.fillMode)
       );
     }
 

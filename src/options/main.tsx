@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "../styles/global.css";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "./form-fields";
 import {
+  AiAssistScope,
   AnswerTemplate,
   ApplicantProfile,
   CertificationEntry,
@@ -19,6 +20,8 @@ import {
   TemplateCategory,
   YesNoUnknown,
   createDefaultState,
+  getAiAssistScopeDescription,
+  getAiAssistScopeLabel,
   createDefaultSettings,
   getFillModeDescription,
   getFillModeLabel,
@@ -44,6 +47,12 @@ const TEMPLATE_CATEGORIES: Array<{ label: string; value: TemplateCategory }> = [
   { label: "Sponsorship", value: "sponsorship" },
   { label: "Work authorization", value: "work-authorization" },
   { label: "General", value: "general" }
+];
+
+const AI_ASSIST_SCOPE_OPTIONS: Array<{ label: string; value: AiAssistScope }> = [
+  { label: "Focused", value: "focused" },
+  { label: "Expanded", value: "expanded" },
+  { label: "Aggressive", value: "aggressive" }
 ];
 
 const YES_NO_UNKNOWN_OPTIONS: Array<{ label: string; value: YesNoUnknown }> = [
@@ -272,10 +281,31 @@ function OptionsApp() {
     }));
   }
 
+  function updateAiAssistScope(value: AiAssistScope) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      aiAssistScope: value
+    }));
+  }
+
+  function updateAiPreferGeneratedValues(value: boolean) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      aiPreferGeneratedValues: value
+    }));
+  }
+
   function updateOpenAiApiKey(value: string) {
     updateDraftSettings((settings) => ({
       ...settings,
       openAiApiKey: value
+    }));
+  }
+
+  function updateAiCustomInstructions(value: string) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      aiCustomInstructions: value
     }));
   }
 
@@ -583,17 +613,19 @@ function OptionsApp() {
     <main className="page-shell options-shell">
       <section className="surface hero-card wide-hero">
         <div className="hero-copy">
-          <span className="eyebrow">Step 14 AI assist, fully auto, and workflow control</span>
+          <span className="eyebrow">Step 15 AI assist control, fully auto, and workflow control</span>
           <h1>Edit what gets filled before you ever touch submit.</h1>
           <p>
             The options page now works like a real drafting workspace instead of
             a raw JSON viewer. You can update the active applicant profile,
             change how aggressive autofill should be, opt into final-step
             auto-submit, enable AI-assisted autofill with your own OpenAI API
-            key, decide whether AI-assisted fills must stay review-first or can
-            run fully auto, upload a saved resume reference, import resume files
-            or pasted text into the draft profile with on-demand parsers, and
-            inspect both ATS adapter behavior and multi-step application flow.
+            key, decide how much control AI should have over field selection and
+            value priority, decide whether AI-assisted fills must stay
+            review-first or can run fully auto, upload a saved resume reference,
+            import resume files or pasted text into the draft profile with
+            on-demand parsers, and inspect both ATS adapter behavior and
+            multi-step application flow.
           </p>
         </div>
         <div className="badge-row">
@@ -799,6 +831,21 @@ function OptionsApp() {
             onChange={updateAiAssistEnabled}
           />
 
+          <SelectField
+            label="AI control scope"
+            value={draftSettings.aiAssistScope}
+            options={AI_ASSIST_SCOPE_OPTIONS}
+            helper={getAiAssistScopeDescription(draftSettings.aiAssistScope)}
+            onChange={(value) => updateAiAssistScope(value as AiAssistScope)}
+          />
+
+          <CheckboxField
+            label="Prefer AI-generated values"
+            checked={draftSettings.aiPreferGeneratedValues}
+            helper="When both the saved profile and AI produce a value, use the AI suggestion first."
+            onChange={updateAiPreferGeneratedValues}
+          />
+
           <TextField
             className="field-span-2"
             label="OpenAI API key"
@@ -806,6 +853,15 @@ function OptionsApp() {
             type="password"
             helper="Saved in local extension storage so the background worker can request AI suggestions. This is convenient for local use, but still less secure than routing requests through your own backend."
             onChange={updateOpenAiApiKey}
+          />
+
+          <TextAreaField
+            className="field-span-2"
+            label="Custom AI instructions"
+            value={draftSettings.aiCustomInstructions}
+            rows={4}
+            helper="Optional extra guidance for tone, style, or how aggressively AI should help with open-ended answers."
+            onChange={updateAiCustomInstructions}
           />
         </div>
 
@@ -821,6 +877,16 @@ function OptionsApp() {
           <div>
             <span className="mini-label">AI assist</span>
             <strong>{draftSettings.aiAssistEnabled ? "Enabled" : "Disabled"}</strong>
+          </div>
+          <div>
+            <span className="mini-label">AI scope</span>
+            <strong>{getAiAssistScopeLabel(draftSettings.aiAssistScope)}</strong>
+          </div>
+          <div>
+            <span className="mini-label">AI priority</span>
+            <strong>
+              {draftSettings.aiPreferGeneratedValues ? "Prefer AI" : "Prefer profile"}
+            </strong>
           </div>
           <div>
             <span className="mini-label">Fully auto</span>
@@ -854,8 +920,13 @@ function OptionsApp() {
         <p className="helper-line">
           AI assist only runs when you trigger a scan or fill. It sends reduced
           field context plus your saved profile data to OpenAI to suggest values
-          for ambiguous blanks, and it blocks auto-submit if any AI suggestion
-          was used to fill the page unless fully auto is enabled.
+          based on the selected AI control scope, and it blocks auto-submit if
+          any AI suggestion was used to fill the page unless fully auto is enabled.
+        </p>
+        <p className="helper-line">
+          Focused scope keeps AI on ambiguous fields, Expanded broadens AI across
+          text-style blanks, and Aggressive lets AI reason about nearly every
+          supported non-sensitive field.
         </p>
         {draftSettings.fullyAutoEnabled ? (
           <p className="helper-line">
@@ -2263,7 +2334,7 @@ function OptionsApp() {
             The options page now edits the active applicant profile directly
           </li>
           <li className="roadmap-active">
-            Fill mode, auto-submit, and the fully auto override are now saved extension settings
+            Fill mode, auto-submit, fully auto, AI scope, and AI value priority are now saved extension settings
           </li>
           <li className="roadmap-active">
             AI-assisted autofill can now be enabled with a saved OpenAI API key

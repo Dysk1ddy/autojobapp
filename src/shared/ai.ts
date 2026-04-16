@@ -1,4 +1,5 @@
 import {
+  AiAssistScope,
   AiAssistSummary,
   AiFieldSuggestion,
   ApplicantProfile,
@@ -72,6 +73,7 @@ export async function generateAiAssistSummary(
 ): Promise<AiAssistSummary> {
   const model = settings.aiAssistModel.trim() || DEFAULT_AI_ASSIST_MODEL;
   const apiKey = settings.openAiApiKey.trim();
+  const customInstructions = settings.aiCustomInstructions.trim();
 
   if (!settings.aiAssistEnabled) {
     return createDefaultAiAssistSummary({
@@ -90,7 +92,10 @@ export async function generateAiAssistSummary(
     });
   }
 
-  const candidates = selectAiAssistCandidates(scan.fieldMatches);
+  const candidates = selectAiAssistCandidates(
+    scan.fieldMatches,
+    settings.aiAssistScope
+  );
 
   if (candidates.length === 0) {
     return createDefaultAiAssistSummary({
@@ -98,11 +103,48 @@ export async function generateAiAssistSummary(
       configured: true,
       model,
       status: "no_candidates",
-      message: "No ambiguous blank fields were strong candidates for AI assistance."
+      message: getNoCandidateMessage(settings.aiAssistScope)
     });
   }
 
   try {
+    const requestInput = [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "You help a user autofill job application forms. Suggest values only when the applicant profile and field context support them. Do not fabricate protected-class, EEO, disability, veteran, race, ethnicity, social security, or date-of-birth answers. If a field is too ambiguous, omit it. When option labels are present, suggestedValue should match one of the options as closely as possible. Keep open-ended answers concise and grounded in the provided templates, profile summary, experience, and skills."
+          }
+        ]
+      }
+    ] as Array<Record<string, unknown>>;
+
+    if (customInstructions) {
+      requestInput.push({
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: `Additional user instructions for AI autofill: ${customInstructions}`
+          }
+        ]
+      });
+    }
+
+    requestInput.push({
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: JSON.stringify(
+            buildAiAssistPromptPayload(scan, profile, candidates, settings)
+          )
+        }
+      ]
+    });
+
     const response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
       headers: {
@@ -112,29 +154,7 @@ export async function generateAiAssistSummary(
       body: JSON.stringify({
         model,
         max_output_tokens: 1400,
-        input: [
-          {
-            role: "system",
-            content: [
-              {
-                type: "input_text",
-                text:
-                  "You help a user autofill job application forms. Suggest values only when the applicant profile and field context support them. Do not fabricate protected-class, EEO, disability, veteran, race, ethnicity, social security, or date-of-birth answers. If a field is too ambiguous, omit it. When option labels are present, suggestedValue should match one of the options as closely as possible. Keep open-ended answers concise and grounded in the provided templates, profile summary, experience, and skills."
-              }
-            ]
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: JSON.stringify(
-                  buildAiAssistPromptPayload(scan, profile, candidates)
-                )
-              }
-            ]
-          }
-        ],
+        input: requestInput,
         text: {
           format: {
             type: "json_schema",
@@ -230,7 +250,8 @@ export async function generateAiAssistSummary(
 function buildAiAssistPromptPayload(
   scan: ScanSummary,
   profile: ApplicantProfile,
-  candidates: AiAssistCandidate[]
+  candidates: AiAssistCandidate[],
+  settings: ExtensionSettings
 ) {
   return {
     application: {
@@ -278,17 +299,22 @@ function buildAiAssistPromptPayload(
       }))
     },
     allowedProfileKeys: PROFILE_FIELD_KEYS,
+    aiControl: {
+      scope: settings.aiAssistScope,
+      preferGeneratedValues: settings.aiPreferGeneratedValues
+    },
     candidates
   };
 }
 
 function selectAiAssistCandidates(
-  fieldMatches: DetectedFieldMatch[]
+  fieldMatches: DetectedFieldMatch[],
+  scope: AiAssistScope
 ): AiAssistCandidate[] {
   return fieldMatches
     .filter((match) => !isBlockedAiField(match))
     .filter((match) => match.inputType !== "file")
-    .filter((match) => match.confidence !== "high" || !match.hasValue)
+    .filter((match) => shouldIncludeInAiScope(match, scope))
     .slice(0, AI_ASSIST_FIELD_LIMIT)
     .map((match) => ({
       fieldId: match.fieldId,
@@ -310,6 +336,40 @@ function selectAiAssistCandidates(
         valuePreview: match.matchedValuePreview
       }
     }));
+}
+
+function shouldIncludeInAiScope(
+  match: DetectedFieldMatch,
+  scope: AiAssistScope
+): boolean {
+  switch (scope) {
+    case "aggressive":
+      return true;
+    case "expanded":
+      return (
+        match.elementTag === "textarea" ||
+        isTextLikeAiField(match.inputType) ||
+        !match.hasValue ||
+        match.confidence !== "high"
+      );
+    default:
+      return match.confidence !== "high" || !match.hasValue;
+  }
+}
+
+function isTextLikeAiField(inputType: string): boolean {
+  return !["checkbox", "radio", "file", "hidden", "submit"].includes(inputType);
+}
+
+function getNoCandidateMessage(scope: AiAssistScope): string {
+  switch (scope) {
+    case "aggressive":
+      return "No supported non-sensitive fields were eligible for aggressive AI assistance on this page.";
+    case "expanded":
+      return "No supported blank or review-needed fields were eligible for expanded AI assistance on this page.";
+    default:
+      return "No ambiguous blank fields were strong candidates for AI assistance.";
+  }
 }
 
 function isBlockedAiField(match: DetectedFieldMatch): boolean {

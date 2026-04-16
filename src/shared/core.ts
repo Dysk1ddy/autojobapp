@@ -20,6 +20,7 @@ export type TemplateCategory =
   | "general";
 export type MatchConfidence = "high" | "medium" | "low" | "unmatched";
 export type FillMode = "conservative" | "neutral" | "liberal";
+export type AiAssistScope = "focused" | "expanded" | "aggressive";
 export type FieldElementTag = "input" | "textarea" | "select";
 export type FillAction = "filled" | "skipped" | "unsupported" | "error";
 export type FillSource = "profile" | "ai" | "none";
@@ -309,8 +310,11 @@ export interface ExtensionSettings {
   autoSubmit: boolean;
   fullyAutoEnabled: boolean;
   aiAssistEnabled: boolean;
+  aiAssistScope: AiAssistScope;
+  aiPreferGeneratedValues: boolean;
   openAiApiKey: string;
   aiAssistModel: string;
+  aiCustomInstructions: string;
 }
 
 export interface ApplicantProfile {
@@ -388,7 +392,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -416,8 +420,11 @@ export function createDefaultSettings(): ExtensionSettings {
     autoSubmit: false,
     fullyAutoEnabled: false,
     aiAssistEnabled: false,
+    aiAssistScope: "focused",
+    aiPreferGeneratedValues: false,
     openAiApiKey: "",
-    aiAssistModel: DEFAULT_AI_ASSIST_MODEL
+    aiAssistModel: DEFAULT_AI_ASSIST_MODEL,
+    aiCustomInstructions: ""
   };
 }
 
@@ -828,6 +835,28 @@ export function getFillModeDescription(fillMode: FillMode): string {
       return "Fills high, medium, and low-confidence matches.";
     default:
       return "Only fills high-confidence matches.";
+  }
+}
+
+export function getAiAssistScopeLabel(scope: AiAssistScope): string {
+  switch (scope) {
+    case "expanded":
+      return "Expanded";
+    case "aggressive":
+      return "Aggressive";
+    default:
+      return "Focused";
+  }
+}
+
+export function getAiAssistScopeDescription(scope: AiAssistScope): string {
+  switch (scope) {
+    case "expanded":
+      return "AI can suggest values for any supported blank field, not just ambiguous ones.";
+    case "aggressive":
+      return "AI can suggest values across nearly all supported non-sensitive fields, including fields the profile matcher already understands.";
+    default:
+      return "AI only targets ambiguous or incomplete fields.";
   }
 }
 
@@ -1437,8 +1466,20 @@ function normalizeExtensionSettings(
       record?.aiAssistEnabled,
       fallback.aiAssistEnabled
     ),
+    aiAssistScope: normalizeAiAssistScope(
+      record?.aiAssistScope,
+      fallback.aiAssistScope
+    ),
+    aiPreferGeneratedValues: readBoolean(
+      record?.aiPreferGeneratedValues,
+      fallback.aiPreferGeneratedValues
+    ),
     openAiApiKey: readString(record?.openAiApiKey, fallback.openAiApiKey),
-    aiAssistModel: readString(record?.aiAssistModel, fallback.aiAssistModel)
+    aiAssistModel: readString(record?.aiAssistModel, fallback.aiAssistModel),
+    aiCustomInstructions: readString(
+      record?.aiCustomInstructions,
+      fallback.aiCustomInstructions
+    )
   };
 }
 
@@ -1636,6 +1677,15 @@ function normalizeFillMode(
   fallback: FillMode = "conservative"
 ): FillMode {
   return value === "conservative" || value === "neutral" || value === "liberal"
+    ? value
+    : fallback;
+}
+
+function normalizeAiAssistScope(
+  value: unknown,
+  fallback: AiAssistScope = "focused"
+): AiAssistScope {
+  return value === "focused" || value === "expanded" || value === "aggressive"
     ? value
     : fallback;
 }

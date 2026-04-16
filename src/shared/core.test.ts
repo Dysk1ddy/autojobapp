@@ -29,6 +29,8 @@ describe("shouldFillConfidence", () => {
 
   it("keeps the fully auto AI override off by default", () => {
     expect(createDefaultSettings().fullyAutoEnabled).toBe(false);
+    expect(createDefaultSettings().aiAssistScope).toBe("focused");
+    expect(createDefaultSettings().aiPreferGeneratedValues).toBe(false);
   });
 
   it("imports a raw applicant profile JSON backup", () => {

@@ -18,10 +18,11 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 12. Add profile JSON import and export for backup and restore.
 13. Add AI-assisted autofill with an OpenAI API key setting.
 14. Add a fully auto AI override that can bypass the default AI review safeguard.
+15. Add broader AI control settings for scope, priority, and custom instructions.
 
-This repo is currently on Step 14.
+This repo is currently on Step 15.
 
-## What Step 14 includes
+## What Step 15 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -57,6 +58,9 @@ This repo is currently on Step 14.
 - Review-first AI suggestions for ambiguous blank fields
 - Auto-submit blocking whenever an AI suggestion was actually used to fill a field
 - An explicit fully auto override that allows AI-assisted fills to continue to final submit when you intentionally turn that safeguard off
+- AI scope controls so you can keep AI focused, expand it across text-style blanks, or make it aggressive across most supported non-sensitive fields
+- AI priority controls so you can keep saved profile values first or let AI suggestions win when both exist
+- Custom AI instructions for tone, style, and answer behavior
 - Vitest plus jsdom test harness
 - HTML fixtures for generic, Greenhouse, Lever, and Workday application pages
 - Resume import fixture coverage
@@ -66,7 +70,7 @@ This repo is currently on Step 14.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 14 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, live job-site file inputs still do not accept scripted uploads, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, and AI-filled submits remain review-first unless you explicitly enable the fully auto override.
+Step 15 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, live job-site file inputs still do not accept scripted uploads, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority.
 
 ## Project structure
 
@@ -129,7 +133,7 @@ Responsible for:
 - receiving popup commands
 - injecting the content script into the active tab
 - asking the content script to scan the page
-- optionally requesting AI suggestions from OpenAI for ambiguous blanks
+- optionally requesting AI suggestions from OpenAI based on the configured AI control scope
 - storing the last scan result
 
 ### Content script
@@ -193,7 +197,7 @@ Responsible for:
 Responsible for:
 
 - showing current extension status
-- editing the active fill mode, auto-submit toggle, and fully auto override
+- editing the active fill mode, auto-submit toggle, AI scope, AI priority, and fully auto override
 - switching between saved applicant profiles
 - duplicating the active profile into a new variant
 - triggering a page scan
@@ -206,8 +210,8 @@ Responsible for:
 Responsible for:
 
 - editing the active applicant profile through a draft form
-- editing extension-level fill mode, auto-submit, and fully auto settings
-- editing the AI-assist toggle and locally stored OpenAI API key
+- editing extension-level fill mode, auto-submit, fully auto, AI scope, and AI priority settings
+- editing the AI-assist toggle, locally stored OpenAI API key, and custom AI instructions
 - linking a saved resume file to the active profile
 - importing and exporting applicant profile JSON backups
 - showing readiness metrics for the saved profile
@@ -232,8 +236,11 @@ It currently contains:
 - `settings.autoSubmit`: whether the extension should click a detected final submit control after fill
 - `settings.fullyAutoEnabled`: whether AI-assisted fills may bypass the default review-before-submit safeguard
 - `settings.aiAssistEnabled`: whether AI suggestions should run during scan or fill
+- `settings.aiAssistScope`: how broadly AI should participate in field suggestion
+- `settings.aiPreferGeneratedValues`: whether AI or the saved profile gets first choice when both have a value
 - `settings.openAiApiKey`: the locally stored OpenAI API key used for optional AI assistance
 - `settings.aiAssistModel`: the OpenAI model alias used for optional AI assistance
+- `settings.aiCustomInstructions`: optional extra guidance appended to the AI system prompt
 - `lastScan`: latest scan summary from the popup
 - `lastResumeImport`: latest local resume-import summary from the options page
 - `lastResumeImport.sourceKind`: whether the last import came from pasted text or a local file
@@ -349,6 +356,7 @@ npm.cmd run test:e2e
 - When AI assist is enabled, reduced field context plus saved profile data may be sent to OpenAI
 - Final submit clicks only happen when the user explicitly enables auto-submit
 - AI-assisted fills require manual review before submit unless the fully auto override is explicitly enabled
+- AI scope and AI priority stay conservative by default
 - High-confidence autofill happens only when the user explicitly triggers it
 - All state stays in local extension storage
 
@@ -449,6 +457,13 @@ npm.cmd run test:e2e
 - Fully auto remains off by default in fresh state and migrated state
 - AI-assisted fills still block auto-submit unless the fully auto override is explicitly enabled
 - When fully auto is enabled alongside auto-submit, AI-assisted fills may continue to the detected final submit control
+
+## Step 15 acceptance criteria
+
+- The popup and options page expose broader AI controls without enabling risky behavior by default
+- AI scope defaults to focused and can be widened to expanded or aggressive
+- Saved profile values remain first priority by default, but AI can be configured to take priority when both exist
+- Optional custom AI instructions are stored in settings and included in AI requests
 
 ## Next step
 

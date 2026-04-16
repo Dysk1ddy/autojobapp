@@ -245,6 +245,85 @@ describe("fillPage", () => {
     expect(result.fill.autoSubmitted).toBe(true);
     expect(result.fill.aiFilled).toBe(1);
   });
+
+  it("keeps saved profile values first when AI priority is off", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Email
+          <input type="email" name="email" />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/linkedin-profile",
+      title: "LinkedIn Profile",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "neutral"
+      },
+      aiSuggestions: [
+        {
+          fieldId: "input:email",
+          selectorHint: 'input[name="email"]',
+          label: "Email",
+          suggestedProfileKey: "contact.email",
+          suggestedProfileLabel: "Email",
+          suggestedValue: "ai-generated@example.com",
+          valuePreview: "ai-generated@example.com",
+          confidence: "high",
+          reason: "The field clearly maps to the applicant's email address."
+        }
+      ]
+    });
+
+    expect(
+      (document.querySelector('input[name="email"]') as HTMLInputElement).value
+    ).toBe(profile.contact.email);
+    expect(result.fill.results[0]?.fillSource).toBe("profile");
+  });
+
+  it("can prefer AI-generated values when that setting is enabled", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Email
+          <input type="email" name="email" />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/linkedin-ai-priority",
+      title: "LinkedIn AI Priority",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "neutral",
+        aiPreferGeneratedValues: true
+      },
+      aiSuggestions: [
+        {
+          fieldId: "input:email",
+          selectorHint: 'input[name="email"]',
+          label: "Email",
+          suggestedProfileKey: "contact.email",
+          suggestedProfileLabel: "Email",
+          suggestedValue: "ai-generated@example.com",
+          valuePreview: "ai-generated@example.com",
+          confidence: "high",
+          reason: "The field clearly maps to the applicant's email address."
+        }
+      ]
+    });
+
+    expect(
+      (document.querySelector('input[name="email"]') as HTMLInputElement).value
+    ).toBe("ai-generated@example.com");
+    expect(result.fill.results[0]?.fillSource).toBe("ai");
+  });
 });
 
 function createProfileWithRepeatedExperience() {
