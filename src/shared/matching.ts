@@ -188,7 +188,14 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     key: "links.github",
     label: "GitHub",
-    synonyms: ["github", "github url", "github profile"],
+    synonyms: [
+      "github",
+      "github url",
+      "github profile",
+      "github profile url",
+      "github link",
+      "github account"
+    ],
     preferredInputTypes: ["url", "text"],
     getValue: (profile) => textValue(profile.links.github)
   },

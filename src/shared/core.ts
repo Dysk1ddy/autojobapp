@@ -3,6 +3,7 @@ export type SupportedPlatform =
   | "greenhouse"
   | "lever"
   | "workday"
+  | "dover"
   | "taleo"
   | "smartrecruiters"
   | "icims"
@@ -983,6 +984,10 @@ export function detectPlatformFromHostname(hostname: string): SupportedPlatform 
 
   if (host.includes("myworkday") || host.includes("workday")) {
     return "workday";
+  }
+
+  if (host.includes("app.dover.com") || host.includes("dover.com")) {
+    return "dover";
   }
 
   if (host.includes("taleo")) {

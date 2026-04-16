@@ -673,6 +673,54 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills Dover-style yes/no button groups and GitHub URL fields", async () => {
+    document.body.innerHTML = `
+      <form data-testid="dover-application-form">
+        <div data-testid="github-field">
+          <p>GitHub URL</p>
+          <input type="url" name="githubProfileUrl" />
+        </div>
+        <div data-testid="sponsorship-question">
+          <p>Will you require sponsorship now or in the future to work in the United States?</p>
+          <div class="button-row">
+            <button type="button" id="dover-sponsorship-yes" aria-pressed="false">Yes</button>
+            <button type="button" id="dover-sponsorship-no" aria-pressed="false">No</button>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".button-row button"));
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        buttons.forEach((candidate) => {
+          candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
+          candidate.setAttribute("data-state", candidate === button ? "checked" : "unchecked");
+        });
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.links.github = "https://github.com/taylor-applicant";
+    profile.workAuthorization.requiresFutureSponsorship = "no";
+
+    const result = await fillPage(profile, {
+      href: "https://app.dover.com/apply/acme/123",
+      title: "Dover Application"
+    });
+
+    expect(
+      (document.querySelector('input[name=\"githubProfileUrl\"]') as HTMLInputElement).value
+    ).toBe("https://github.com/taylor-applicant");
+    expect(
+      document.getElementById("dover-sponsorship-no")?.getAttribute("aria-pressed")
+    ).toBe("true");
+    expect(
+      document.getElementById("dover-sponsorship-yes")?.getAttribute("aria-pressed")
+    ).toBe("false");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
   it("fills checkbox groups even when the profile has more values than the page exposes", async () => {
     document.body.innerHTML = `
       <form>

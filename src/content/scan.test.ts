@@ -247,4 +247,45 @@ describe("scanPage", () => {
       )
     ).toBe(true);
   });
+
+  it("uses the Dover adapter for GitHub fields and yes/no button groups", () => {
+    document.body.innerHTML = `
+      <form data-testid="dover-application-form">
+        <div data-testid="github-field">
+          <p>GitHub URL</p>
+          <input type="url" name="githubProfileUrl" />
+        </div>
+        <div data-testid="sponsorship-question">
+          <p>Will you require sponsorship now or in the future to work in the United States?</p>
+          <div class="button-row">
+            <button type="button" aria-pressed="false">Yes</button>
+            <button type="button" aria-pressed="false">No</button>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const scan = scanPage(profile, {
+      href: "https://app.dover.com/apply/acme/123",
+      title: "Dover Application"
+    });
+
+    expect(scan.platform).toBe("dover");
+    expect(scan.adapterLabel).toBe("Dover adapter");
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.matchedKey === "links.github" &&
+          match.label.toLowerCase().includes("github")
+      )
+    ).toBe(true);
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.inputType === "radio" &&
+          match.label.toLowerCase().includes("sponsorship")
+      )
+    ).toBe(true);
+  });
 });

@@ -28,6 +28,8 @@ export function resolvePlatformAdapter(hostname: string): PlatformAdapter {
       return leverAdapter;
     case "workday":
       return workdayAdapter;
+    case "dover":
+      return doverAdapter;
     default:
       return genericAdapter;
   }
@@ -204,6 +206,58 @@ const workdayAdapter = createAdapter("workday", "Workday adapter", [
     ])
 });
 
+const doverAdapter = createAdapter("dover", "Dover adapter", [
+  "Reads Dover question and field wrappers for label context.",
+  "Supports Dover-style grouped buttons, sponsorship questions, and social-link URL fields."
+], {
+  getLabel: (field) =>
+    firstText(
+      referencedText(field, "aria-labelledby"),
+      textFromClosest(
+        field,
+        "[data-testid*='question'], [data-testid*='field'], [data-testid*='input'], .application-question, .question, .field, fieldset, form",
+        "label, legend, [role='heading'], h2, h3, h4, p, span, div"
+      )
+    ),
+  getSectionHeading: (field) =>
+    firstText(
+      textFromClosest(
+        field,
+        "section, article, form, fieldset, [data-testid*='section']",
+        "h2, h3, h4, [role='heading'], legend"
+      ),
+      nearestHeadingText(field)
+    ),
+  getNearbyText: (field) =>
+    clippedText(
+      field.closest(
+        "[data-testid*='question'], [data-testid*='field'], [data-testid*='section'], .application-question, .question, .field, fieldset, section, article, div"
+      )?.textContent
+    ),
+  getOptionLabels: (field) =>
+    extractDoverChoiceLabels(
+      field,
+      "[data-testid*='question'], [data-testid*='field'], .application-question, .question, .field, fieldset"
+    ),
+  getSignals: (field) =>
+    dedupeStrings([
+      ...attributeTokens(field, ["data-testid", "data-slot", "data-state", "name"]),
+      ...ancestorAttributeTokens(field, ["data-testid", "data-slot"], 5),
+      ...referencedTextTokens(field, "aria-describedby"),
+      ...referencedTextTokens(field, "aria-labelledby")
+    ]),
+  getGroupingKey: (field) => doverGroupingKey(field),
+  getJobSignals: (pageText) =>
+    filterSignals(pageText, [
+      "github",
+      "portfolio",
+      "linkedin",
+      "sponsorship",
+      "work authorization",
+      "resume"
+    ])
+});
+
 function createAdapter(
   platform: SupportedPlatform,
   label: string,
@@ -304,6 +358,28 @@ function extractChoiceLabels(
   );
 }
 
+function extractDoverChoiceLabels(
+  field: AdapterFormControl,
+  containerSelector: string
+): string[] {
+  const container = field.closest(containerSelector);
+
+  if (!container) {
+    return [];
+  }
+
+  return dedupeStrings(
+    Array.from(
+      container.querySelectorAll(
+        "label, button, [role='radio'], [role='checkbox'], input[type='radio'], input[type='checkbox']"
+      )
+    )
+      .map((element) => cleanText(element.textContent))
+      .filter(Boolean)
+      .slice(0, 12)
+  );
+}
+
 function choiceGroupingKey(
   field: AdapterFormControl,
   containerSelector: string,
@@ -332,6 +408,30 @@ function choiceGroupingKey(
     cleanText(container.querySelector("legend, label, [role='heading']")?.textContent);
 
   return stableValue ? `${field.type}:${normalizeKey(stableValue)}` : null;
+}
+
+function doverGroupingKey(field: AdapterFormControl): string | null {
+  const container = field.closest(
+    "[data-testid*='question'], [data-testid*='field'], .application-question, .question, .field, fieldset, [role='radiogroup'], [role='group']"
+  );
+
+  if (!container) {
+    return null;
+  }
+
+  const stableValue = cleanText(
+    container.getAttribute("data-testid") ||
+      container.getAttribute("name") ||
+      container.id ||
+      container.querySelector("label, legend, [role='heading'], h2, h3, h4, p, span, div")
+        ?.textContent
+  );
+
+  if (!stableValue) {
+    return null;
+  }
+
+  return `${field.tagName.toLowerCase()}:${normalizeKey(stableValue)}`;
 }
 
 function attributeTokens(

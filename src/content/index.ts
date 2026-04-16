@@ -74,6 +74,16 @@ const FILL_HIGHLIGHT_STYLE_ID = "autojobapp-fill-style";
 const FILL_HIGHLIGHT_CLASS = "autojobapp-fill-flash";
 const FILL_SETTLE_DELAY_MS = 180;
 const FILL_VERIFICATION_MAX_ATTEMPTS = 2;
+const BUTTON_CHOICE_SELECTOR = [
+  "button[aria-pressed]",
+  "[role='button'][aria-pressed]",
+  "button[aria-checked]",
+  "[role='button'][aria-checked]",
+  "button[aria-selected]",
+  "[role='button'][aria-selected]",
+  "button[data-state]",
+  "[role='button'][data-state]"
+].join(", ");
 const REPEATABLE_SECTION_CONFIGS: RepeatableSectionConfig[] = [
   {
     prefix: "experience.",
@@ -1331,7 +1341,7 @@ function getChoiceKind(element: ChoiceControl): "radio" | "checkbox" {
     return element.type === "radio" ? "radio" : "checkbox";
   }
 
-  return getNormalizedRole(element) === "radio" ? "radio" : "checkbox";
+  return getInferredChoiceKind(element) === "radio" ? "radio" : "checkbox";
 }
 
 function isChoiceControlChecked(element: ChoiceControl): boolean {
@@ -1339,9 +1349,19 @@ function isChoiceControlChecked(element: ChoiceControl): boolean {
     return element.checked;
   }
 
+  const dataState = element.getAttribute("data-state")?.toLowerCase();
+  const ariaPressed = element.getAttribute("aria-pressed");
+  const ariaSelected = element.getAttribute("aria-selected");
+
   return (
     element.getAttribute("aria-checked") === "true" ||
-    element.getAttribute("data-selected") === "true"
+    element.getAttribute("data-selected") === "true" ||
+    ariaPressed === "true" ||
+    ariaSelected === "true" ||
+    dataState === "checked" ||
+    dataState === "active" ||
+    dataState === "on" ||
+    dataState === "selected"
   );
 }
 
@@ -1405,9 +1425,56 @@ function setChoiceControlChecked(
         .filter(isCustomChoiceControl)
         .forEach((candidate) => {
           candidate.setAttribute("aria-checked", candidate === element ? "true" : "false");
+          if (candidate.hasAttribute("aria-pressed")) {
+            candidate.setAttribute("aria-pressed", candidate === element ? "true" : "false");
+          }
+          if (candidate.hasAttribute("aria-selected")) {
+            candidate.setAttribute("aria-selected", candidate === element ? "true" : "false");
+          }
+          if (candidate.hasAttribute("data-state")) {
+            candidate.setAttribute("data-state", candidate === element ? "checked" : "unchecked");
+          }
         });
-    } else {
-      element.setAttribute("aria-checked", checked ? "true" : "false");
+      } else {
+        element.setAttribute("aria-checked", checked ? "true" : "false");
+      }
+    }
+
+  if (isChoiceControlChecked(element) !== checked) {
+    if (element.hasAttribute("aria-pressed")) {
+      if (getChoiceKind(element) === "radio" && checked) {
+        getChoiceGroupElements(element)
+          .filter(isCustomChoiceControl)
+          .forEach((candidate) => {
+            candidate.setAttribute("aria-pressed", candidate === element ? "true" : "false");
+          });
+      } else {
+        element.setAttribute("aria-pressed", checked ? "true" : "false");
+      }
+    }
+
+    if (element.hasAttribute("aria-selected")) {
+      if (getChoiceKind(element) === "radio" && checked) {
+        getChoiceGroupElements(element)
+          .filter(isCustomChoiceControl)
+          .forEach((candidate) => {
+            candidate.setAttribute("aria-selected", candidate === element ? "true" : "false");
+          });
+      } else {
+        element.setAttribute("aria-selected", checked ? "true" : "false");
+      }
+    }
+
+    if (element.hasAttribute("data-state")) {
+      if (getChoiceKind(element) === "radio" && checked) {
+        getChoiceGroupElements(element)
+          .filter(isCustomChoiceControl)
+          .forEach((candidate) => {
+            candidate.setAttribute("data-state", candidate === element ? "checked" : "unchecked");
+          });
+      } else {
+        element.setAttribute("data-state", checked ? "checked" : "unchecked");
+      }
     }
   }
 
@@ -1547,8 +1614,93 @@ function activateChoiceTarget(
   }
 }
 
+function getInferredChoiceKind(element: HTMLElement): "radio" | "checkbox" | null {
+  const role = getNormalizedRole(element);
+
+  if (role === "radio" || role === "checkbox") {
+    return role;
+  }
+
+  if (!isButtonChoiceControl(element)) {
+    return null;
+  }
+
+  const container = resolveChoiceGroupContainer(element as FormControl);
+
+  if (container?.matches("[role='radiogroup']")) {
+    return "radio";
+  }
+
+  if (container?.matches("[role='group']") && hasBinaryChoiceButtons(container)) {
+    return "radio";
+  }
+
+  if (container && hasBinaryChoiceButtons(container)) {
+    return "radio";
+  }
+
+  return "checkbox";
+}
+
+function isButtonChoiceControl(field: HTMLElement): boolean {
+  if (!(field instanceof HTMLButtonElement) && getNormalizedRole(field) !== "button") {
+    return false;
+  }
+
+  if (field.matches("[role='tab'], [aria-haspopup='menu']")) {
+    return false;
+  }
+
+  const dataState = field.getAttribute("data-state")?.toLowerCase() ?? "";
+  const hasChoiceState =
+    field.hasAttribute("aria-pressed") ||
+    field.hasAttribute("aria-checked") ||
+    field.hasAttribute("aria-selected") ||
+    ["checked", "unchecked", "active", "inactive", "on", "off", "selected", "unselected"].includes(
+      dataState
+    );
+
+  if (!hasChoiceState) {
+    return false;
+  }
+
+  const text = cleanText(
+    field.getAttribute("aria-label") ||
+      field.getAttribute("value") ||
+      field.textContent
+  );
+
+  if (!text) {
+    return false;
+  }
+
+  const container = resolveChoiceGroupContainer(field as FormControl);
+  const siblingChoices = container
+    ? Array.from(
+        container.querySelectorAll<HTMLElement>(
+          `${BUTTON_CHOICE_SELECTOR}, [role='radio'], [role='checkbox'], input[type='radio'], input[type='checkbox']`
+        )
+      ).filter((candidate) => candidate !== field)
+    : [];
+
+  return siblingChoices.length > 0;
+}
+
+function hasBinaryChoiceButtons(container: HTMLElement): boolean {
+  const labels = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      `${BUTTON_CHOICE_SELECTOR}, [role='radio'], [role='checkbox'], label, button`
+    )
+  )
+    .map((element) => normalizeText(cleanText(element.textContent || element.getAttribute("aria-label"))))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return labels.includes("yes") && labels.includes("no");
+}
+
 function getCustomChoiceGroupingKey(field: CustomFormControl): string | null {
-  const role = getNormalizedRole(field);
+  const role = getInferredChoiceKind(field) ?? getNormalizedRole(field);
   const name = field.getAttribute("name")?.trim();
 
   if (name) {
@@ -1593,7 +1745,7 @@ function extractChoicePromptText(container: HTMLElement | null): string {
     .find((child) => {
       if (
         child.matches(
-          "label, input, select, textarea, [role='radio'], [role='checkbox'], [role='option']"
+          `label, input, select, textarea, button, [role='button'], [role='radio'], [role='checkbox'], [role='option']`
         )
       ) {
         return false;
@@ -1601,7 +1753,7 @@ function extractChoicePromptText(container: HTMLElement | null): string {
 
       if (
         child.querySelector(
-          "input, select, textarea, [role='radio'], [role='checkbox'], [role='option']"
+          "input, select, textarea, button, [role='button'], [role='radio'], [role='checkbox'], [role='option']"
         )
       ) {
         return false;
@@ -1625,7 +1777,7 @@ function extractChoicePromptText(container: HTMLElement | null): string {
 function resolveChoiceGroupContainer(field: FormControl): HTMLElement | null {
   return (
     field.closest(
-      "[role='radiogroup'], [role='group'], fieldset, [data-question-id], [data-automation-id='formField'], .application-question, .field, .question"
+      "[role='radiogroup'], [role='group'], fieldset, [data-question-id], [data-testid*='question'], [data-testid*='field'], [data-testid*='input'], [data-automation-id='formField'], .application-question, .field, .question"
     ) ?? null
   );
 }
@@ -1648,7 +1800,11 @@ function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
 
   if (customGroupingKey) {
     return dedupeElements(
-      queryAllDocuments<HTMLElement>(`[role="${escapeAttributeValue(role)}"]`).filter(
+      queryAllDocuments<HTMLElement>(
+        role === "radio"
+          ? `[role="radio"], ${BUTTON_CHOICE_SELECTOR}`
+          : `[role="checkbox"], ${BUTTON_CHOICE_SELECTOR}`
+      ).filter(
         (element): element is ChoiceControl =>
           isCustomChoiceControl(element) &&
           getCustomChoiceGroupingKey(element) === customGroupingKey
@@ -1666,8 +1822,8 @@ function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
     Array.from(
       container.querySelectorAll<HTMLElement>(
         role === "radio"
-          ? 'input[type="radio"], [role="radio"]'
-          : 'input[type="checkbox"], [role="checkbox"]'
+          ? `input[type="radio"], [role="radio"], ${BUTTON_CHOICE_SELECTOR}`
+          : `input[type="checkbox"], [role="checkbox"], ${BUTTON_CHOICE_SELECTOR}`
       )
     ).filter(
       (element): element is ChoiceControl =>
@@ -2184,6 +2340,7 @@ function getPageFields(): FormControl[] {
       "[role='listbox']",
       "[role='radio']",
       "[role='checkbox']",
+      BUTTON_CHOICE_SELECTOR,
       "[contenteditable='true']",
       "[contenteditable='plaintext-only']"
     ].join(", ")
@@ -2523,6 +2680,11 @@ function detectFieldInputType(field: FormControl): string {
   }
 
   const role = getNormalizedRole(field);
+  const inferredChoiceKind = getInferredChoiceKind(field);
+
+  if (inferredChoiceKind) {
+    return inferredChoiceKind;
+  }
 
   if (role) {
     return role;
@@ -2573,7 +2735,8 @@ function isCustomFieldElement(field: HTMLElement): field is CustomFormControl {
     role === "combobox" ||
     role === "listbox" ||
     role === "radio" ||
-    role === "checkbox"
+    role === "checkbox" ||
+    isButtonChoiceControl(field)
   );
 }
 
@@ -2611,7 +2774,7 @@ function isCustomChoiceControl(field: HTMLElement): field is CustomFormControl {
     !(field instanceof HTMLInputElement) &&
     !(field instanceof HTMLTextAreaElement) &&
     !(field instanceof HTMLSelectElement) &&
-    (getNormalizedRole(field) === "radio" || getNormalizedRole(field) === "checkbox")
+    Boolean(getInferredChoiceKind(field))
   );
 }
 
