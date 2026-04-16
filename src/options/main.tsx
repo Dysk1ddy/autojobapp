@@ -454,7 +454,7 @@ function OptionsApp() {
       const { extractTextFromResumeFile } = await import("../shared/resume-files");
       setStatus(`Parsing ${resumeImportFile.name} locally...`);
       const extracted = await extractTextFromResumeFile(resumeImportFile);
-      const documentReference = createDocumentMetadataReferenceFromFile(
+      const documentReference = await createDocumentReferenceFromFile(
         resumeImportFile,
         "local"
       );
@@ -482,7 +482,7 @@ function OptionsApp() {
       setResumeImportFileInputKey((current) => current + 1);
       setStatus(
         result.summary.importedFields.length > 0
-          ? `Imported ${resumeImportFile.name} into ${result.summary.importedFields.length} profile areas.`
+          ? `Imported ${resumeImportFile.name} into ${result.summary.importedFields.length} profile areas and kept it upload-ready for autofill.`
           : `Parsed ${resumeImportFile.name}, but review the warnings before saving.`
       );
     } catch (error) {
@@ -511,7 +511,7 @@ function OptionsApp() {
       const { extractTextFromResumeFile } = await import("../shared/resume-files");
       setStatus(`Extracting text from ${resumeImportFile.name} for ChatGPT...`);
       const extracted = await extractTextFromResumeFile(resumeImportFile);
-      const documentReference = createDocumentMetadataReferenceFromFile(
+      const documentReference = await createDocumentReferenceFromFile(
         resumeImportFile,
         "local"
       );
@@ -551,7 +551,7 @@ function OptionsApp() {
       setResumeImportFileInputKey((current) => current + 1);
       setStatus(
         response.resumeImport.summary.importedFields.length > 0
-          ? `ChatGPT mapped ${resumeImportFile.name} into ${response.resumeImport.summary.importedFields.length} profile areas, including reusable blanks where it had enough context. Review the draft, then save when it looks right.`
+          ? `ChatGPT mapped ${resumeImportFile.name} into ${response.resumeImport.summary.importedFields.length} profile areas, including reusable blanks where it had enough context, and kept the file upload-ready. Review the draft, then save when it looks right.`
           : `ChatGPT reviewed ${resumeImportFile.name}, but there was not enough structured information to update the draft confidently.`
       );
     } catch (error) {
@@ -1521,6 +1521,74 @@ function OptionsApp() {
                 value={draftProfile.workAuthorization.ethnicity}
                 onChange={(value) =>
                   updateWorkAuthorizationField("ethnicity", value)
+                }
+              />
+              <TextField
+                label="Self-identification language"
+                helper="Enter the visible option text you usually choose, for example English."
+                value={draftProfile.workAuthorization.selfIdentificationLanguage}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("selfIdentificationLanguage", value)
+                }
+              />
+              <SelectField
+                label="At least 18 years old"
+                helper="Used for age eligibility dropdowns and radio questions."
+                value={draftProfile.workAuthorization.isAtLeast18}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("isAtLeast18", value)
+                }
+              />
+              <SelectField
+                label="Can verify legal right to work"
+                helper="For employer-specific verification questions in the country of application."
+                value={draftProfile.workAuthorization.canVerifyLegalWorkRight}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("canVerifyLegalWorkRight", value)
+                }
+              />
+              <SelectField
+                label="Termination history"
+                helper="For questions about being terminated or asked to resign by a former employer."
+                value={draftProfile.workAuthorization.terminationHistory}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("terminationHistory", value)
+                }
+              />
+              <SelectField
+                label="Friends or relatives at company"
+                helper="For conflict-of-interest or referral disclosure questions."
+                value={draftProfile.workAuthorization.friendsOrRelativesAtCompany}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField(
+                    "friendsOrRelativesAtCompany",
+                    value
+                  )
+                }
+              />
+              <SelectField
+                label="Export-control restricted citizenship"
+                helper="Used when an application asks about citizenship tied to export-control restrictions."
+                value={draftProfile.workAuthorization.exportControlCitizenship}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField(
+                    "exportControlCitizenship",
+                    value
+                  )
+                }
+              />
+              <SelectField
+                label="Plans to join board of directors"
+                helper="For questions about joining a for-profit board before starting."
+                value={draftProfile.workAuthorization.boardDirectorPlans}
+                options={YES_NO_UNKNOWN_OPTIONS}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("boardDirectorPlans", value)
                 }
               />
               <TextField

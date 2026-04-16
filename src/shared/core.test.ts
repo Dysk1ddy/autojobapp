@@ -71,4 +71,30 @@ describe("shouldFillConfidence", () => {
     expect(imported.label).toBe("Data science profile");
     expect(imported.personal.firstName).toBe("Jamie");
   });
+
+  it("keeps the newer screening-question defaults and imports them from JSON", () => {
+    const fallback = createDefaultApplicantProfile();
+    const imported = parseApplicantProfileJson(
+      JSON.stringify({
+        ...fallback,
+        workAuthorization: {
+          ...fallback.workAuthorization,
+          selfIdentificationLanguage: "English",
+          isAtLeast18: "yes",
+          canVerifyLegalWorkRight: "yes",
+          terminationHistory: "no",
+          friendsOrRelativesAtCompany: "no",
+          exportControlCitizenship: "no",
+          boardDirectorPlans: "no"
+        }
+      }),
+      createDefaultApplicantProfile()
+    );
+
+    expect(fallback.workAuthorization.selfIdentificationLanguage).toBe("");
+    expect(fallback.workAuthorization.isAtLeast18).toBe("unknown");
+    expect(imported.workAuthorization.selfIdentificationLanguage).toBe("English");
+    expect(imported.workAuthorization.canVerifyLegalWorkRight).toBe("yes");
+    expect(imported.workAuthorization.boardDirectorPlans).toBe("no");
+  });
 });

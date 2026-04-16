@@ -717,9 +717,10 @@ async function fillMatchedGroup(
           resolvedValue: aiResolvedValue
         }
       : null;
-  const fillTarget = settings.aiPreferGeneratedValues
+  const policyTarget = createBinaryChoicePolicyTarget(match, group);
+  const fillTarget = policyTarget ?? (settings.aiPreferGeneratedValues
     ? aiTarget ?? profileTarget
-    : profileTarget ?? aiTarget;
+    : profileTarget ?? aiTarget);
 
   if (!fillTarget) {
     if (!profileSuggestionAllowed && !aiSuggestionAllowed) {
@@ -784,6 +785,8 @@ async function fillMatchedGroup(
         attempt.verified
           ? fillTarget.source === "ai"
             ? "Filled a radio or checkbox choice using an AI suggestion."
+            : fillTarget.source === "none"
+              ? "Filled a radio or checkbox choice using the default yes/no policy."
             : "Filled a radio or checkbox choice."
           : attempt.failureMessage,
         {
@@ -820,6 +823,8 @@ async function fillMatchedGroup(
         attempt.verified
           ? fillTarget.source === "ai"
             ? "Filled a select control using an AI suggestion."
+            : fillTarget.source === "none"
+              ? "Filled a select control using the default yes/no policy."
             : "Filled a select control."
           : attempt.failureMessage,
         {
@@ -890,7 +895,7 @@ function fillFileUploadGroup(
   group: CandidateGroup,
   profile: ApplicantProfile
 ): FilledFieldResult {
-  const primaryElement = group.elements.find(isFileInput);
+  const primaryElement = findResumeUploadInput(group);
 
   if (!primaryElement) {
     return buildResult(
@@ -1092,6 +1097,35 @@ function createAiResolvedValue(suggestion: AiFieldSuggestion): ResolvedProfileVa
     raw: value || null,
     preview: suggestion.valuePreview || value,
     hasValue: Boolean(value)
+  };
+}
+
+function createBinaryChoicePolicyTarget(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+):
+  | {
+      source: "none";
+      matchedKey: ProfileFieldKey | null;
+      confidence: MatchConfidence;
+      resolvedValue: ResolvedProfileValue;
+    }
+  | null {
+  if (!isBinaryYesNoPolicyField(group)) {
+    return null;
+  }
+
+  const answer = shouldDefaultYesForBinaryQuestion(match, group) ? "Yes" : "No";
+
+  return {
+    source: "none",
+    matchedKey: match.matchedKey,
+    confidence: match.confidence,
+    resolvedValue: {
+      raw: answer,
+      preview: answer,
+      hasValue: true
+    }
   };
 }
 
@@ -1897,6 +1931,121 @@ function getChoiceElements(group: CandidateGroup): ChoiceControl[] {
   );
 }
 
+function isBinaryYesNoPolicyField(group: CandidateGroup): boolean {
+  const primaryElement = resolvePrimaryElement(group);
+
+  if (isChoiceGroup(group)) {
+    const options = getChoiceElements(group);
+
+    if (options.length === 0 || getChoiceKind(options[0]) !== "radio") {
+      return false;
+    }
+
+    return hasBinaryYesNoTokens(
+      options.flatMap((option) => getChoiceControlTokens(option))
+    );
+  }
+
+  if (primaryElement instanceof HTMLSelectElement) {
+    return hasBinaryYesNoTokens(
+      Array.from(primaryElement.options).flatMap((option) => [
+        option.textContent ?? "",
+        option.label ?? "",
+        option.value ?? ""
+      ])
+    );
+  }
+
+  if (primaryElement && isCustomSelectionControl(primaryElement)) {
+    return hasBinaryYesNoTokens(
+      getAssociatedOptionElements(primaryElement).flatMap((option) => [
+        option.textContent ?? "",
+        option.getAttribute("aria-label") ?? "",
+        option.getAttribute("data-value") ?? ""
+      ])
+    );
+  }
+
+  return false;
+}
+
+function hasBinaryYesNoTokens(values: string[]): boolean {
+  const normalized = values
+    .map((value) => normalizeBinaryChoiceToken(value))
+    .filter((value): value is "yes" | "no" => value !== null);
+
+  return normalized.includes("yes") && normalized.includes("no");
+}
+
+function normalizeBinaryChoiceToken(
+  value: string | null | undefined
+): "yes" | "no" | null {
+  const normalized = normalizeText(cleanText(value));
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (["yes", "y", "true"].includes(normalized)) {
+    return "yes";
+  }
+
+  if (["no", "n", "false"].includes(normalized)) {
+    return "no";
+  }
+
+  return null;
+}
+
+function shouldDefaultYesForBinaryQuestion(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
+  const searchable = normalizeText(
+    [
+      match.label,
+      match.name,
+      match.placeholder,
+      match.ariaLabel,
+      match.sectionHeading,
+      match.nearbyText,
+      match.matchedLabel,
+      group.candidate.label,
+      group.candidate.name,
+      group.candidate.elementId,
+      group.candidate.placeholder,
+      group.candidate.ariaLabel,
+      group.candidate.sectionHeading,
+      group.candidate.nearbyText,
+      ...group.candidate.optionLabels
+    ].join(" ")
+  );
+
+  if (!searchable) {
+    return false;
+  }
+
+  if (
+    searchable.includes("sponsorship") ||
+    searchable.includes("future sponsorship") ||
+    searchable.includes("visa")
+  ) {
+    return false;
+  }
+
+  return [
+    "authorized to work",
+    "legally authorized",
+    "legal right to work",
+    "verify legal right to work",
+    "verification of your legal right to work",
+    "work authorization",
+    "eligible to work",
+    "employment authorization",
+    "authorized for employment"
+  ].some((phrase) => searchable.includes(phrase));
+}
+
 function doesChoiceGroupMatchValue(
   group: CandidateGroup,
   resolvedValue: ResolvedProfileValue
@@ -1952,13 +2101,18 @@ function doesSelectMatchValue(
   element: HTMLSelectElement,
   resolvedValue: ResolvedProfileValue
 ): boolean {
-  const current = cleanText(
-    element.selectedOptions[0]?.textContent || element.value
-  );
   const target = normalizedNeedles(resolvedValue);
-  const normalizedCurrent = normalizeText(current);
+  const currentTokens = [
+    element.selectedOptions[0]?.textContent,
+    element.selectedOptions[0]?.value,
+    element.value
+  ]
+    .map((value) => normalizeText(cleanText(value ?? "")))
+    .filter(Boolean);
 
-  return Boolean(normalizedCurrent) && target.some((needle) => normalizedCurrent === needle);
+  return currentTokens.some((token) =>
+    target.some((needle) => token === needle || token.includes(needle))
+  );
 }
 
 function doesTextControlMatchValue(
@@ -2072,7 +2226,8 @@ function fillFileInputControl(
   element: HTMLInputElement,
   files: File[]
 ): boolean {
-  const nextFiles = createSyntheticFileList(files);
+  const transfer = createSyntheticDataTransfer(files);
+  const nextFiles = transfer?.files ?? createSyntheticFileList(files);
 
   if (!nextFiles || files.length === 0) {
     return false;
@@ -2081,7 +2236,16 @@ function fillFileInputControl(
   element.focus();
 
   try {
-    element.files = nextFiles;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "files"
+    );
+
+    if (descriptor?.set) {
+      descriptor.set.call(element, nextFiles);
+    } else {
+      element.files = nextFiles;
+    }
   } catch {
     try {
       Object.defineProperty(element, "files", {
@@ -2094,16 +2258,26 @@ function fillFileInputControl(
     }
   }
 
+  dispatchFileUploadEvents(element, transfer);
   dispatchEvents(element, ["input", "change", "blur"]);
   highlightFilledElement(element);
   return (element.files?.length ?? 0) > 0;
 }
 
-function createSyntheticFileList(files: File[]): FileList | null {
-  if (typeof DataTransfer !== "undefined") {
-    const transfer = new DataTransfer();
+function createSyntheticDataTransfer(files: File[]): DataTransfer | null {
+  if (typeof DataTransfer === "undefined") {
+    return null;
+  }
 
-    files.forEach((file) => transfer.items.add(file));
+  const transfer = new DataTransfer();
+  files.forEach((file) => transfer.items.add(file));
+  return transfer;
+}
+
+function createSyntheticFileList(files: File[]): FileList | null {
+  const transfer = createSyntheticDataTransfer(files);
+
+  if (transfer) {
     return transfer.files;
   }
 
@@ -2121,6 +2295,170 @@ function createSyntheticFileList(files: File[]): FileList | null {
   });
 
   return fileList as unknown as FileList;
+}
+
+function dispatchFileUploadEvents(
+  element: HTMLInputElement,
+  transfer: DataTransfer | null
+): void {
+  const targets = dedupeElements([
+    element,
+    ...(getFileUploadEventTargets(element) as HTMLElement[])
+  ]);
+
+  targets.forEach((target) => {
+    if (typeof DragEvent !== "undefined" && transfer) {
+      target.dispatchEvent(
+        new DragEvent("dragenter", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer
+        })
+      );
+      target.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer
+        })
+      );
+      target.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer
+        })
+      );
+      return;
+    }
+
+    if (transfer) {
+      const dropEvent = new Event("drop", {
+        bubbles: true,
+        cancelable: true
+      }) as Event & { dataTransfer?: DataTransfer };
+      dropEvent.dataTransfer = transfer;
+      target.dispatchEvent(dropEvent);
+    }
+  });
+
+  void element;
+}
+
+function getFileUploadEventTargets(element: HTMLInputElement): HTMLElement[] {
+  const targets: HTMLElement[] = [];
+  const visibleLabel = getNativeChoiceLabelElements(element).find(isVisibleElement);
+
+  if (visibleLabel) {
+    targets.push(visibleLabel);
+  }
+
+  let current = element.parentElement;
+  let depth = 0;
+
+  while (current && depth < 5) {
+    const text = normalizeText(
+      cleanText(
+        current.getAttribute("aria-label") ||
+          current.getAttribute("data-testid") ||
+          current.textContent
+      )
+    );
+
+    if (
+      text.includes("resume") ||
+      text.includes("upload") ||
+      text.includes("browse") ||
+      text.includes("drop")
+    ) {
+      targets.push(current);
+    }
+
+    current = current.parentElement;
+    depth += 1;
+  }
+
+  return dedupeElements(targets);
+}
+
+function findResumeUploadInput(group: CandidateGroup): HTMLInputElement | null {
+  const currentElements = resolveCurrentGroupElements(group);
+  const inGroup = currentElements.filter(isFileInput);
+
+  if (inGroup.length > 0) {
+    return chooseBestResumeUploadInput(inGroup, group.candidate);
+  }
+
+  const allFileInputs = queryAllDocuments<HTMLInputElement>("input[type='file']");
+  const resumeLikeInputs = allFileInputs.filter((input) =>
+    looksLikeResumeUpload(buildFileUploadCandidate(input, group.candidate))
+  );
+
+  return chooseBestResumeUploadInput(resumeLikeInputs, group.candidate);
+}
+
+function chooseBestResumeUploadInput(
+  inputs: HTMLInputElement[],
+  candidate: FieldScanCandidate
+): HTMLInputElement | null {
+  if (inputs.length === 0) {
+    return null;
+  }
+
+  const scored = inputs.map((input) => {
+    const inputCandidate = buildFileUploadCandidate(input, candidate);
+    const text = normalizeText(
+      [
+        inputCandidate.label,
+        inputCandidate.name,
+        inputCandidate.elementId,
+        inputCandidate.nearbyText,
+        inputCandidate.sectionHeading,
+        inputCandidate.selectorHint
+      ].join(" ")
+    );
+
+    let score = 0;
+    if (text.includes("resume")) {
+      score += 4;
+    }
+    if (text.includes("upload")) {
+      score += 2;
+    }
+    if (text.includes("cover letter")) {
+      score -= 5;
+    }
+    if (input.files?.length) {
+      score -= 3;
+    }
+
+    return { input, score };
+  });
+
+  scored.sort((left, right) => right.score - left.score);
+  return scored[0]?.input ?? null;
+}
+
+function buildFileUploadCandidate(
+  input: HTMLInputElement,
+  fallback: FieldScanCandidate
+): FieldScanCandidate {
+  return {
+    ...fallback,
+    fieldId: input.id ? `input:${input.id}` : fallback.fieldId,
+    selectorHint: buildSelectorHint(input, 0),
+    label: extractFieldLabel(input),
+    inputType: detectFieldInputType(input),
+    name: input.getAttribute("name")?.trim() ?? "",
+    elementId: input.id.trim(),
+    placeholder: getFieldPlaceholder(input),
+    ariaLabel: input.getAttribute("aria-label")?.trim() ?? "",
+    autocomplete: input.getAttribute("autocomplete")?.trim() ?? "",
+    sectionHeading: extractSectionHeading(input),
+    nearbyText: extractNearbyText(input),
+    optionLabels: [],
+    adapterSignals: []
+  };
 }
 
 function createStoredDocumentFile(
@@ -2189,8 +2527,14 @@ function findMatchingOption(
 
   for (const needle of normalizedValues) {
     const exact = optionList.find((option) => {
-      const normalizedOption = normalizeText(option.value || option.textContent || "");
-      return normalizedOption === needle;
+      const normalizedTokens = [
+        option.textContent,
+        option.label,
+        option.value
+      ]
+        .map((value) => normalizeText(cleanText(value ?? "")))
+        .filter(Boolean);
+      return normalizedTokens.some((token) => token === needle);
     });
 
     if (exact) {
@@ -2200,8 +2544,16 @@ function findMatchingOption(
 
   for (const needle of normalizedValues) {
     const partial = optionList.find((option) => {
-      const normalizedOption = normalizeText(option.value || option.textContent || "");
-      return normalizedOption.includes(needle) || needle.includes(normalizedOption);
+      const normalizedTokens = [
+        option.textContent,
+        option.label,
+        option.value
+      ]
+        .map((value) => normalizeText(cleanText(value ?? "")))
+        .filter(Boolean);
+      return normalizedTokens.some(
+        (token) => token.includes(needle) || needle.includes(token)
+      );
     });
 
     if (partial) {
@@ -2222,19 +2574,51 @@ function stringifyResolvedValue(resolvedValue: ResolvedProfileValue): string {
 
 function normalizedNeedles(resolvedValue: ResolvedProfileValue): string[] {
   if (Array.isArray(resolvedValue.raw)) {
-    return resolvedValue.raw.map(normalizeText).filter(Boolean);
+    return dedupeStrings(
+      resolvedValue.raw.flatMap((value) => expandNormalizedNeedles(normalizeText(value)))
+    );
   }
 
   const rawValue = resolvedValue.raw ?? "";
-  const needles = [normalizeText(rawValue)].filter(Boolean);
+  return expandNormalizedNeedles(normalizeText(rawValue));
+}
 
-  if (needles[0] === "no") {
+function expandNormalizedNeedles(primaryNeedle: string): string[] {
+  const needles = [primaryNeedle].filter(Boolean);
+
+  if (primaryNeedle === "no") {
     needles.push("false");
-  } else if (needles[0] === "yes") {
+  } else if (primaryNeedle === "yes") {
     needles.push("true");
   }
 
-  return needles;
+  if (
+    primaryNeedle === "prefer not to self identify" ||
+    primaryNeedle === "prefer not to say" ||
+    primaryNeedle === "prefer not to answer" ||
+    primaryNeedle === "declined to state" ||
+    primaryNeedle === "decline to state"
+  ) {
+    needles.push(
+      "prefer not to self identify",
+      "prefer not to say",
+      "prefer not to answer",
+      "declined to state",
+      "decline to state",
+      "i do not wish to self identify",
+      "i dont wish to self identify",
+      "do not wish to self identify",
+      "decline to self identify",
+      "choose not to disclose",
+      "decline to answer"
+    );
+  }
+
+  if (primaryNeedle === "prefer not to self-identify") {
+    needles.push("prefer not to self identify");
+  }
+
+  return dedupeStrings(needles);
 }
 
 function setNativeValue(

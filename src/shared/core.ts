@@ -71,6 +71,17 @@ export const PROFILE_FIELD_KEYS = [
   "workAuthorization.requiresSponsorship",
   "workAuthorization.requiresFutureSponsorship",
   "workAuthorization.willingToRelocate",
+  "workAuthorization.veteranStatus",
+  "workAuthorization.disabilityStatus",
+  "workAuthorization.gender",
+  "workAuthorization.ethnicity",
+  "workAuthorization.selfIdentificationLanguage",
+  "workAuthorization.isAtLeast18",
+  "workAuthorization.canVerifyLegalWorkRight",
+  "workAuthorization.terminationHistory",
+  "workAuthorization.friendsOrRelativesAtCompany",
+  "workAuthorization.exportControlCitizenship",
+  "workAuthorization.boardDirectorPlans",
   "documents.resume",
   "documents.coverLetter",
   "templates.cover-note",
@@ -311,6 +322,13 @@ export interface WorkAuthorizationDetails {
   disabilityStatus: string;
   gender: string;
   ethnicity: string;
+  selfIdentificationLanguage: string;
+  isAtLeast18: YesNoUnknown;
+  canVerifyLegalWorkRight: YesNoUnknown;
+  terminationHistory: YesNoUnknown;
+  friendsOrRelativesAtCompany: YesNoUnknown;
+  exportControlCitizenship: YesNoUnknown;
+  boardDirectorPlans: YesNoUnknown;
   clearanceStatus: string;
 }
 
@@ -443,7 +461,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -633,6 +651,13 @@ export function createDefaultApplicantProfile(
       disabilityStatus: "Prefer not to say",
       gender: "Prefer not to self-identify",
       ethnicity: "Prefer not to self-identify",
+      selfIdentificationLanguage: "",
+      isAtLeast18: "unknown",
+      canVerifyLegalWorkRight: "unknown",
+      terminationHistory: "unknown",
+      friendsOrRelativesAtCompany: "unknown",
+      exportControlCitizenship: "unknown",
+      boardDirectorPlans: "unknown",
       clearanceStatus: "None"
     },
     documents: {
@@ -1352,6 +1377,34 @@ function normalizeWorkAuthorization(
     ),
     gender: readString(record?.gender, fallback.gender),
     ethnicity: readString(record?.ethnicity, fallback.ethnicity),
+    selfIdentificationLanguage: readString(
+      record?.selfIdentificationLanguage,
+      fallback.selfIdentificationLanguage
+    ),
+    isAtLeast18: normalizeYesNoUnknown(
+      record?.isAtLeast18,
+      fallback.isAtLeast18
+    ),
+    canVerifyLegalWorkRight: normalizeYesNoUnknown(
+      record?.canVerifyLegalWorkRight,
+      fallback.canVerifyLegalWorkRight
+    ),
+    terminationHistory: normalizeYesNoUnknown(
+      record?.terminationHistory,
+      fallback.terminationHistory
+    ),
+    friendsOrRelativesAtCompany: normalizeYesNoUnknown(
+      record?.friendsOrRelativesAtCompany,
+      fallback.friendsOrRelativesAtCompany
+    ),
+    exportControlCitizenship: normalizeYesNoUnknown(
+      record?.exportControlCitizenship,
+      fallback.exportControlCitizenship
+    ),
+    boardDirectorPlans: normalizeYesNoUnknown(
+      record?.boardDirectorPlans,
+      fallback.boardDirectorPlans
+    ),
     clearanceStatus: readString(
       record?.clearanceStatus,
       fallback.clearanceStatus

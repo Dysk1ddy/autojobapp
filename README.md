@@ -74,8 +74,10 @@ This repo is currently on Step 19.
 - Saved resume uploads that can now be attached to detected resume file inputs during autofill
 - Support for ARIA textboxes, contenteditable fields, comboboxes, and listboxes during scan and fill
 - Support for native and ARIA-based radio buttons and checkboxes, including single affirmative checkboxes and grouped multi-select answers
+- Support for company-specific screening questions such as age, legal-work verification, conflict disclosures, export-control prompts, and self-identification language
+- Default yes-no policy for radio buttons and dropdowns: answer `No` unless the question is about being authorized or legally eligible to work, in which case answer `Yes`
 - Post-fill verification plus retry logic so framework rerenders are less likely to wipe values after autofill
-- Better option discovery for custom select-style controls and stronger label extraction through `aria-labelledby`
+- Better option discovery for custom select-style controls, stronger label extraction through `aria-labelledby`, and coded-option matching that now checks visible option text as well as raw `<option value>` attributes
 - Vitest plus jsdom test harness
 - HTML fixtures for generic, Greenhouse, Lever, and Workday application pages
 - Resume import fixture coverage
@@ -231,6 +233,7 @@ Responsible for:
 Responsible for:
 
 - editing the active applicant profile through a draft form
+- storing additional employer-specific screening answers inside the work-authorization section for applications like Micron
 - editing extension-level fill mode, auto-submit, fully auto, AI scope, and AI priority settings
 - editing the AI-assist toggle, locally stored OpenAI API key, and custom AI instructions
 - verifying whether the saved OpenAI key and selected model are actually usable before running ChatGPT features

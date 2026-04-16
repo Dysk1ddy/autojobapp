@@ -82,7 +82,8 @@ describe("importResumeTextIntoProfile", () => {
         fileName: "resume.docx",
         mimeType:
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        source: "local"
+        source: "local",
+        dataBase64: "cmVzdW1lIGRhdGE="
       }
     });
 
@@ -91,5 +92,6 @@ describe("importResumeTextIntoProfile", () => {
     expect(result.summary.parserLabel).toBe("docx-xml");
     expect(result.profile.documents.resume?.fileName).toBe("resume.docx");
     expect(result.profile.documents.resume?.source).toBe("local");
+    expect(result.profile.documents.resume?.dataBase64).toBe("cmVzdW1lIGRhdGE=");
   });
 });

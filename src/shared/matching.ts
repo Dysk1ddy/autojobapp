@@ -352,6 +352,171 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       textValue(toSentenceCase(profile.workAuthorization.willingToRelocate))
   },
   {
+    key: "workAuthorization.veteranStatus",
+    label: "Veteran status",
+    synonyms: [
+      "veteran status",
+      "protected veteran",
+      "military veteran",
+      "are you a veteran",
+      "voluntary self identification of veteran status"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) => textValue(profile.workAuthorization.veteranStatus)
+  },
+  {
+    key: "workAuthorization.disabilityStatus",
+    label: "Disability status",
+    synonyms: [
+      "disability status",
+      "disability",
+      "self identify as having a disability",
+      "voluntary self identification of disability",
+      "disability disclosure"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) => textValue(profile.workAuthorization.disabilityStatus)
+  },
+  {
+    key: "workAuthorization.gender",
+    label: "Gender",
+    synonyms: [
+      "gender",
+      "gender identity",
+      "self described gender",
+      "sex",
+      "sex or gender"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) => textValue(profile.workAuthorization.gender)
+  },
+  {
+    key: "workAuthorization.ethnicity",
+    label: "Ethnicity",
+    synonyms: [
+      "ethnicity",
+      "race",
+      "race/ethnicity",
+      "ethnicity/race",
+      "hispanic or latino",
+      "racial identity",
+      "self identify your ethnicity",
+      "voluntary self identification of ethnicity"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) => textValue(profile.workAuthorization.ethnicity)
+  },
+  {
+    key: "workAuthorization.selfIdentificationLanguage",
+    label: "Self-identification language",
+    synonyms: [
+      "self identification language",
+      "self-identification language",
+      "eeo language",
+      "language for self identification"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["select", "radio", "text"],
+    getValue: (profile) =>
+      textValue(profile.workAuthorization.selfIdentificationLanguage)
+  },
+  {
+    key: "workAuthorization.isAtLeast18",
+    label: "At least 18 years old",
+    synonyms: [
+      "are you at least 18 years old",
+      "at least 18 years old",
+      "18 years old",
+      "18 years of age",
+      "over 18"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.isAtLeast18))
+  },
+  {
+    key: "workAuthorization.canVerifyLegalWorkRight",
+    label: "Can verify legal work right",
+    synonyms: [
+      "submit verification of your legal right to work",
+      "legal right to work at a micron affiliated company",
+      "verification of your legal right to work",
+      "can you submit verification of your legal right to work",
+      "verify your legal right to work"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.canVerifyLegalWorkRight))
+  },
+  {
+    key: "workAuthorization.terminationHistory",
+    label: "Termination history",
+    synonyms: [
+      "have you ever been terminated",
+      "asked to resign by any former employer",
+      "termination history",
+      "former employer for the following reasons"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.terminationHistory))
+  },
+  {
+    key: "workAuthorization.friendsOrRelativesAtCompany",
+    label: "Friends or relatives at company",
+    synonyms: [
+      "friends relatives presently employed",
+      "friends or relatives presently employed",
+      "friends or relatives employed by micron",
+      "friends relatives employed by the company",
+      "relatives employed by micron"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(
+        toSentenceCase(profile.workAuthorization.friendsOrRelativesAtCompany)
+      )
+  },
+  {
+    key: "workAuthorization.exportControlCitizenship",
+    label: "Export-control restricted citizenship",
+    synonyms: [
+      "export control rules",
+      "citizen of or hold dual citizenship",
+      "cuba iran north korea and syria",
+      "dual citizenship with any of these countries",
+      "export control citizenship"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(
+        toSentenceCase(profile.workAuthorization.exportControlCitizenship)
+      )
+  },
+  {
+    key: "workAuthorization.boardDirectorPlans",
+    label: "Board of directors plans",
+    synonyms: [
+      "plans to join the board of directors",
+      "join the board of directors of a for profit company",
+      "board of directors prior to starting",
+      "board of directors plans"
+    ],
+    preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.boardDirectorPlans))
+  },
+  {
     key: "documents.resume",
     label: "Resume upload",
     synonyms: ["resume", "cv", "upload resume", "attach resume"],

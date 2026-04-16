@@ -721,6 +721,279 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(2);
   });
 
+  it("auto-selects ethnicity dropdown fields", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Ethnicity
+          <select name="ethnicity">
+            <option value="">Select one</option>
+            <option value="latino">Hispanic or Latino</option>
+            <option value="not-listed">Not Hispanic or Latino</option>
+            <option value="decline">Prefer not to answer</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.ethnicity = "Prefer not to self-identify";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ethnicity-select",
+      title: "Ethnicity Select"
+    });
+
+    const select = document.querySelector('select[name="ethnicity"]') as HTMLSelectElement;
+    expect(select.value).toBe("decline");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("auto-clicks ethnicity radio requests", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <legend>Please identify your ethnicity</legend>
+          <label>
+            <input type="radio" name="ethnicity-request" value="Hispanic or Latino" />
+            Hispanic or Latino
+          </label>
+          <label>
+            <input type="radio" name="ethnicity-request" value="Not Hispanic or Latino" />
+            Not Hispanic or Latino
+          </label>
+          <label>
+            <input type="radio" name="ethnicity-request" value="Prefer not to answer" />
+            Prefer not to answer
+          </label>
+        </fieldset>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.ethnicity = "Prefer not to self-identify";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ethnicity-radio",
+      title: "Ethnicity Radio"
+    });
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="ethnicity-request"]')
+    );
+    expect(radios.find((radio) => radio.value === "Prefer not to answer")?.checked).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("maps prefer-not-to-self-identify answers onto declined-to-state ethnicity radios", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <legend>Ethnicity</legend>
+          <label>
+            <input type="radio" name="ethnicity-request" value="tmr" />
+            Two or More Races
+          </label>
+          <label>
+            <input type="radio" name="ethnicity-request" value="declined" />
+            Declined to state
+          </label>
+          <label>
+            <input type="radio" name="ethnicity-request" value="white" />
+            White
+          </label>
+        </fieldset>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.ethnicity = "Prefer not to self-identify";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/ethnicity-radio-declined",
+      title: "Ethnicity Radio Declined"
+    });
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="ethnicity-request"]')
+    );
+    expect(radios.find((radio) => radio.value === "declined")?.checked).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills Micron-style screening dropdowns even when option values are coded", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Self Identification Language
+          <select name="self_identification_language">
+            <option value="">Select</option>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+          </select>
+        </label>
+        <label>
+          Are you at least 18 years old?
+          <select name="age_requirement">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          If employment is offered, can you submit verification of your legal right to work at a Micron affiliated company in the country to which you have applied?
+          <select name="legal_right_to_work">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          Have you ever been terminated or asked to resign by any former employer for the following reasons:
+          <select name="termination_history">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          Do you have any friends/relatives presently employed by Micron?
+          <select name="friends_or_relatives">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          All Micron sites must observe U.S. export control rules that control information that may be provided to persons from Cuba, Iran, North Korea, and Syria. Are you a citizen of, or do you hold dual citizenship with any of these countries?
+          <select name="export_control_citizenship">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          Do you have any plans to join the board of directors of a for-profit company prior to starting a job with Micron?
+          <select name="board_of_directors">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.selfIdentificationLanguage = "English";
+    profile.workAuthorization.isAtLeast18 = "yes";
+    profile.workAuthorization.canVerifyLegalWorkRight = "yes";
+    profile.workAuthorization.terminationHistory = "no";
+    profile.workAuthorization.friendsOrRelativesAtCompany = "no";
+    profile.workAuthorization.exportControlCitizenship = "no";
+    profile.workAuthorization.boardDirectorPlans = "no";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/micron-screening",
+      title: "Micron Screening"
+    });
+
+    expect(
+      (document.querySelector(
+        'select[name="self_identification_language"]'
+      ) as HTMLSelectElement).value
+    ).toBe("en");
+    expect(
+      (document.querySelector('select[name="age_requirement"]') as HTMLSelectElement)
+        .value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="legal_right_to_work"]'
+      ) as HTMLSelectElement).value
+    ).toBe("Y");
+    expect(
+      (document.querySelector(
+        'select[name="termination_history"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="friends_or_relatives"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="export_control_citizenship"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="board_of_directors"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(7);
+  });
+
+  it("defaults unknown yes-no screening dropdowns to no", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Have you signed a restrictive covenant that could affect this role?
+          <select name="restrictive_covenant">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/generic-yes-no-dropdown",
+      title: "Generic Yes No Dropdown"
+    });
+
+    expect(
+      (document.querySelector(
+        'select[name="restrictive_covenant"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(result.fill.results[0]?.message).toContain("default yes/no policy");
+  });
+
+  it("defaults authorization-style yes-no questions to yes", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <legend>Are you legally authorized to work in the United States?</legend>
+          <label>
+            <input type="radio" name="us_work_authorization" value="Yes" />
+            Yes
+          </label>
+          <label>
+            <input type="radio" name="us_work_authorization" value="No" />
+            No
+          </label>
+        </fieldset>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/work-authorization-yes-no",
+      title: "Work Authorization Yes No"
+    });
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="us_work_authorization"]')
+    );
+    expect(radios.find((radio) => radio.value === "Yes")?.checked).toBe(true);
+    expect(result.fill.results[0]?.message).toContain("default yes/no policy");
+  });
+
   it("fills checkbox groups even when the profile has more values than the page exposes", async () => {
     document.body.innerHTML = `
       <form>
@@ -833,6 +1106,52 @@ describe("fillPage", () => {
     expect(resumeInput.files?.[0]?.name).toBe("resume.pdf");
     expect(result.fill.results[0]?.action).toBe("filled");
     expect(result.fill.results[0]?.fillSource).toBe("profile");
+  });
+
+  it("dispatches wrapper upload events for dropzone-style resume fields", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="resume-dropzone" data-testid="resume-dropzone">
+          <span>Upload resume</span>
+          <input type="file" name="resumeUpload" style="display: none;" />
+        </div>
+      </form>
+    `;
+
+    const dropzone = document.querySelector(".resume-dropzone") as HTMLDivElement;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    let sawDrop = false;
+    let sawChange = false;
+
+    dropzone.addEventListener("drop", (event) => {
+      const maybeTransfer = (event as DragEvent & { dataTransfer?: DataTransfer }).dataTransfer;
+      sawDrop = (maybeTransfer?.files?.length ?? 0) > 0;
+    });
+    input.addEventListener("change", () => {
+      sawChange = (input.files?.length ?? 0) > 0;
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.documents.resume = {
+      id: "resume-2",
+      name: "Resume PDF",
+      fileName: "resume.pdf",
+      mimeType: "application/pdf",
+      source: "local",
+      sizeBytes: 12,
+      dataBase64: "cmVzdW1lIGRhdGE=",
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/resume-dropzone",
+      title: "Resume Dropzone"
+    });
+
+    expect(input.files?.length).toBe(1);
+    expect(sawChange).toBe(true);
+    expect(sawDrop).toBe(true);
+    expect(result.fill.results[0]?.action).toBe("filled");
   });
 });
 
