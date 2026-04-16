@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Repeated Experience Application</title>
+  </head>
+  <body>
+    <main>
+      <h1>Application</h1>
+      <form>
+        <section>
+          <h2>Work Experience</h2>
+          <div id="experience-list">
+            <div class="experience-block">
+              <label>
+                Company
+                <input type="text" name="experience_company_1" />
+              </label>
+              <label>
+                Job title
+                <input type="text" name="experience_title_1" />
+              </label>
+              <label>
+                Responsibilities
+                <textarea name="experience_description_1"></textarea>
+              </label>
+            </div>
+          </div>
+
+          <button type="button" id="add-experience">
+            Add another experience
+          </button>
+        </section>
+      </form>
+    </main>
+
+    <script>
+      const list = document.getElementById("experience-list");
+      const button = document.getElementById("add-experience");
+
+      button.addEventListener("click", () => {
+        const nextIndex = list.children.length + 1;
+        const clone = list.firstElementChild.cloneNode(true);
+        clone.querySelectorAll("input, textarea").forEach((field) => {
+          field.value = "";
+          if (field.name.includes("company")) {
+            field.name = `experience_company_${nextIndex}`;
+          }
+          if (field.name.includes("title")) {
+            field.name = `experience_title_${nextIndex}`;
+          }
+          if (field.name.includes("description")) {
+            field.name = `experience_description_${nextIndex}`;
+          }
+        });
+        list.appendChild(clone);
+      });
+    </script>
+  </body>
+</html>

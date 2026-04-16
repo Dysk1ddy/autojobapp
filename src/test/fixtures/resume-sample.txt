@@ -1,0 +1,24 @@
+Taylor Applicant
+New York, NY
+taylor.applicant@example.com | +1 555-0100
+https://www.linkedin.com/in/taylor-applicant | https://github.com/taylor-applicant
+
+Summary
+Product-minded software engineer with experience shipping internal tools, recruiting automation, and candidate-facing web workflows.
+
+Skills
+TypeScript, React, Chrome Extensions, Node.js, Playwright, Accessibility
+
+Experience
+Software Engineer at Northwind Labs
+2023 - Present
+- Built internal recruiting and analytics tools for operations and engineering teams.
+- Shipped React and TypeScript dashboards for applicant review workflows.
+
+Education
+State University
+Bachelor of Science in Computer Science
+
+Projects
+AutoApply Tracker
+Organized applications, documents, and outreach across multiple job boards using a browser extension workflow.

@@ -1,0 +1,27 @@
+<main class="application-form">
+  <section>
+    <h2>Profile</h2>
+    <div class="application-question" data-question-id="candidate_name">
+      <label class="application-label" for="gh-name">Full Name</label>
+      <input id="gh-name" name="full_name" type="text" />
+    </div>
+    <div class="application-question" data-question-id="candidate_email">
+      <label class="application-label" for="gh-email">Email</label>
+      <input id="gh-email" name="email" type="email" />
+    </div>
+    <div class="application-question" data-question-id="future_sponsorship">
+      <fieldset>
+        <legend>Will you now or in the future require sponsorship?</legend>
+        <label>
+          <input type="radio" name="future_sponsorship" value="Yes" />
+          Yes
+        </label>
+        <label>
+          <input type="radio" name="future_sponsorship" value="No" />
+          No
+        </label>
+      </fieldset>
+    </div>
+  </section>
+  <button type="button">Continue</button>
+</main>

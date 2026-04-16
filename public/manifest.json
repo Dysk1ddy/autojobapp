@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "AutoJobApp",
+  "version": "0.1.0",
+  "description": "A privacy-first scaffold for job application form scanning and future autofill workflows.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "action": {
+    "default_title": "AutoJobApp",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html"
+}

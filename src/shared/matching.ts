@@ -1,0 +1,751 @@
+import {
+  ApplicantProfile,
+  DetectedFieldMatch,
+  FieldElementTag,
+  FieldMatchBreakdown,
+  MatchConfidence,
+  ProfileFieldKey,
+  TemplateCategory
+} from "./core";
+
+export interface FieldScanCandidate {
+  fieldId: string;
+  selectorHint: string;
+  label: string;
+  elementTag: FieldElementTag;
+  inputType: string;
+  name: string;
+  elementId: string;
+  placeholder: string;
+  ariaLabel: string;
+  autocomplete: string;
+  sectionHeading: string;
+  nearbyText: string;
+  optionLabels: string[];
+  adapterSignals: string[];
+  required: boolean;
+}
+
+export interface ResolvedProfileValue {
+  raw: string | string[] | null;
+  preview: string;
+  hasValue: boolean;
+}
+
+interface FieldDefinition {
+  key: ProfileFieldKey;
+  label: string;
+  synonyms: string[];
+  autocomplete?: string[];
+  preferredTags?: FieldElementTag[];
+  preferredInputTypes?: string[];
+  disallowedInputTypes?: string[];
+  getValue: (
+    profile: ApplicantProfile,
+    entryIndex?: number
+  ) => ResolvedProfileValue;
+}
+
+interface FieldEvaluation {
+  key: ProfileFieldKey;
+  label: string;
+  score: number;
+  signals: string[];
+  valuePreview: string;
+  hasValue: boolean;
+}
+
+const FIELD_DEFINITIONS: FieldDefinition[] = [
+  {
+    key: "personal.fullName",
+    label: "Full name",
+    synonyms: ["full name", "legal name", "your name", "applicant name", "name"],
+    autocomplete: ["name"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.personal.fullName)
+  },
+  {
+    key: "personal.firstName",
+    label: "First name",
+    synonyms: ["first name", "given name", "forename"],
+    autocomplete: ["given-name"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.personal.firstName)
+  },
+  {
+    key: "personal.lastName",
+    label: "Last name",
+    synonyms: ["last name", "family name", "surname"],
+    autocomplete: ["family-name"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.personal.lastName)
+  },
+  {
+    key: "personal.preferredName",
+    label: "Preferred name",
+    synonyms: ["preferred name", "nickname", "chosen name"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.personal.preferredName)
+  },
+  {
+    key: "personal.pronouns",
+    label: "Pronouns",
+    synonyms: ["pronouns", "personal pronouns"],
+    preferredTags: ["input", "select"],
+    getValue: (profile) => textValue(profile.personal.pronouns)
+  },
+  {
+    key: "personal.headline",
+    label: "Headline",
+    synonyms: ["headline", "professional headline", "current title"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.personal.headline)
+  },
+  {
+    key: "personal.summary",
+    label: "Professional summary",
+    synonyms: [
+      "summary",
+      "professional summary",
+      "about you",
+      "tell us about yourself",
+      "bio"
+    ],
+    preferredTags: ["textarea"],
+    getValue: (profile) => textValue(profile.personal.summary)
+  },
+  {
+    key: "contact.email",
+    label: "Email",
+    synonyms: ["email", "email address", "e mail"],
+    autocomplete: ["email"],
+    preferredInputTypes: ["email", "text"],
+    getValue: (profile) => textValue(profile.contact.email)
+  },
+  {
+    key: "contact.phone",
+    label: "Phone",
+    synonyms: ["phone", "mobile", "phone number", "telephone", "cell"],
+    autocomplete: ["tel", "tel-national"],
+    preferredInputTypes: ["tel", "text"],
+    getValue: (profile) => textValue(profile.contact.phone)
+  },
+  {
+    key: "contact.addressLine1",
+    label: "Address line 1",
+    synonyms: ["address", "street address", "address line 1", "street"],
+    autocomplete: ["street-address", "address-line1"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.contact.addressLine1)
+  },
+  {
+    key: "contact.addressLine2",
+    label: "Address line 2",
+    synonyms: ["address line 2", "apartment", "suite", "unit"],
+    autocomplete: ["address-line2"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.contact.addressLine2)
+  },
+  {
+    key: "contact.city",
+    label: "City",
+    synonyms: ["city", "town"],
+    autocomplete: ["address-level2"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.contact.city)
+  },
+  {
+    key: "contact.state",
+    label: "State or province",
+    synonyms: ["state", "province", "state or province", "region"],
+    autocomplete: ["address-level1"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.contact.state)
+  },
+  {
+    key: "contact.postalCode",
+    label: "Postal code",
+    synonyms: ["zip", "zip code", "postal code", "postcode"],
+    autocomplete: ["postal-code"],
+    preferredInputTypes: ["text"],
+    getValue: (profile) => textValue(profile.contact.postalCode)
+  },
+  {
+    key: "contact.country",
+    label: "Country",
+    synonyms: ["country", "country of residence"],
+    autocomplete: ["country", "country-name"],
+    preferredTags: ["input", "select"],
+    getValue: (profile) => textValue(profile.contact.country)
+  },
+  {
+    key: "links.linkedin",
+    label: "LinkedIn",
+    synonyms: ["linkedin", "linkedin url", "linkedin profile"],
+    preferredInputTypes: ["url", "text"],
+    getValue: (profile) => textValue(profile.links.linkedin)
+  },
+  {
+    key: "links.github",
+    label: "GitHub",
+    synonyms: ["github", "github url", "github profile"],
+    preferredInputTypes: ["url", "text"],
+    getValue: (profile) => textValue(profile.links.github)
+  },
+  {
+    key: "links.portfolio",
+    label: "Portfolio",
+    synonyms: ["portfolio", "portfolio url", "portfolio website"],
+    preferredInputTypes: ["url", "text"],
+    getValue: (profile) => textValue(profile.links.portfolio)
+  },
+  {
+    key: "links.website",
+    label: "Website",
+    synonyms: ["website", "personal website", "homepage"],
+    preferredInputTypes: ["url", "text"],
+    getValue: (profile) => textValue(profile.links.website)
+  },
+  {
+    key: "education.school",
+    label: "School",
+    synonyms: ["school", "university", "college", "institution"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.education[entryIndex]?.school)
+  },
+  {
+    key: "education.degree",
+    label: "Degree",
+    synonyms: ["degree", "degree type", "qualification"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.education[entryIndex]?.degree)
+  },
+  {
+    key: "education.major",
+    label: "Major",
+    synonyms: ["major", "field of study", "subject"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.education[entryIndex]?.major)
+  },
+  {
+    key: "experience.company",
+    label: "Company",
+    synonyms: ["company", "employer", "organization"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.experience[entryIndex]?.company)
+  },
+  {
+    key: "experience.title",
+    label: "Job title",
+    synonyms: ["job title", "title", "position", "role"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.experience[entryIndex]?.title)
+  },
+  {
+    key: "experience.location",
+    label: "Experience location",
+    synonyms: ["work location", "job location", "location"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.experience[entryIndex]?.location)
+  },
+  {
+    key: "experience.description",
+    label: "Experience description",
+    synonyms: [
+      "responsibilities",
+      "job description",
+      "experience description",
+      "accomplishments",
+      "what did you do"
+    ],
+    preferredTags: ["textarea"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(
+        profile.experience[entryIndex]?.description ||
+          profile.experience[entryIndex]?.achievements.join("; ")
+      )
+  },
+  {
+    key: "projects.name",
+    label: "Project name",
+    synonyms: ["project name", "project", "project title"],
+    preferredInputTypes: ["text"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.projects[entryIndex]?.name)
+  },
+  {
+    key: "projects.description",
+    label: "Project description",
+    synonyms: ["project description", "project details", "describe your project"],
+    preferredTags: ["textarea"],
+    getValue: (profile, entryIndex = 0) =>
+      textValue(profile.projects[entryIndex]?.description)
+  },
+  {
+    key: "skills.list",
+    label: "Skills",
+    synonyms: ["skills", "technical skills", "technologies", "tools"],
+    preferredTags: ["input", "textarea"],
+    getValue: (profile) => listValue(profile.skills)
+  },
+  {
+    key: "workAuthorization.authorizedCountries",
+    label: "Work authorization",
+    synonyms: [
+      "authorized to work",
+      "legally authorized",
+      "work authorization",
+      "eligible to work"
+    ],
+    preferredTags: ["select", "input"],
+    getValue: (profile) => listValue(profile.workAuthorization.authorizedCountries)
+  },
+  {
+    key: "workAuthorization.requiresSponsorship",
+    label: "Requires sponsorship",
+    synonyms: [
+      "require sponsorship",
+      "need sponsorship",
+      "visa sponsorship",
+      "sponsorship required"
+    ],
+    preferredTags: ["select", "input"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.requiresSponsorship))
+  },
+  {
+    key: "workAuthorization.requiresFutureSponsorship",
+    label: "Future sponsorship",
+    synonyms: [
+      "future sponsorship",
+      "now or in the future require sponsorship",
+      "future visa sponsorship",
+      "in the future require sponsorship"
+    ],
+    preferredTags: ["select", "input"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.requiresFutureSponsorship))
+  },
+  {
+    key: "workAuthorization.willingToRelocate",
+    label: "Relocation preference",
+    synonyms: ["willing to relocate", "relocation", "open to relocation"],
+    preferredTags: ["select", "input"],
+    getValue: (profile) =>
+      textValue(toSentenceCase(profile.workAuthorization.willingToRelocate))
+  },
+  {
+    key: "documents.resume",
+    label: "Resume upload",
+    synonyms: ["resume", "cv", "upload resume", "attach resume"],
+    preferredInputTypes: ["file"],
+    getValue: (profile) => documentValue(profile.documents.resume, "No saved resume")
+  },
+  {
+    key: "documents.coverLetter",
+    label: "Cover letter upload",
+    synonyms: ["cover letter", "upload cover letter", "attach cover letter"],
+    preferredInputTypes: ["file"],
+    getValue: (profile) =>
+      documentValue(profile.documents.coverLetter, "No saved cover letter")
+  },
+  {
+    key: "templates.cover-note",
+    label: "Cover note answer",
+    synonyms: [
+      "cover letter",
+      "cover note",
+      "additional information",
+      "short note",
+      "introduction"
+    ],
+    preferredTags: ["textarea"],
+    getValue: (profile) => templateValue(profile, "cover-note")
+  },
+  {
+    key: "templates.motivation",
+    label: "Motivation answer",
+    synonyms: [
+      "why this role",
+      "why are you interested",
+      "why do you want this role",
+      "why us",
+      "why this company"
+    ],
+    preferredTags: ["textarea"],
+    getValue: (profile) => templateValue(profile, "motivation")
+  },
+  {
+    key: "templates.salary",
+    label: "Salary answer",
+    synonyms: [
+      "salary",
+      "compensation",
+      "salary expectation",
+      "desired salary",
+      "pay expectation"
+    ],
+    preferredTags: ["textarea", "input", "select"],
+    getValue: (profile) => templateValue(profile, "salary")
+  },
+  {
+    key: "templates.relocation",
+    label: "Relocation answer",
+    synonyms: ["relocation", "willing to relocate", "open to relocation"],
+    preferredTags: ["textarea", "input", "select"],
+    getValue: (profile) => templateValue(profile, "relocation")
+  },
+  {
+    key: "templates.sponsorship",
+    label: "Sponsorship answer",
+    synonyms: [
+      "sponsorship",
+      "visa sponsorship",
+      "work authorization question",
+      "need sponsorship"
+    ],
+    preferredTags: ["textarea", "input", "select"],
+    getValue: (profile) => templateValue(profile, "sponsorship")
+  }
+];
+
+export function classifyFieldCandidates(
+  candidates: FieldScanCandidate[],
+  profile: ApplicantProfile
+): DetectedFieldMatch[] {
+  return candidates.map((candidate) => classifyFieldCandidate(candidate, profile));
+}
+
+export function summarizeFieldMatches(
+  matches: DetectedFieldMatch[]
+): FieldMatchBreakdown {
+  return matches.reduce<FieldMatchBreakdown>(
+    (summary, match) => {
+      summary[match.confidence] += 1;
+      return summary;
+    },
+    {
+      high: 0,
+      medium: 0,
+      low: 0,
+      unmatched: 0
+    }
+  );
+}
+
+export function resolveProfileFieldValue(
+  profile: ApplicantProfile,
+  key: ProfileFieldKey,
+  entryIndex = 0
+): ResolvedProfileValue {
+  const definition = FIELD_DEFINITIONS.find((field) => field.key === key);
+
+  return definition?.getValue(profile, entryIndex) ?? emptyValue();
+}
+
+export function isRepeatableProfileFieldKey(key: ProfileFieldKey): boolean {
+  return (
+    key.startsWith("education.") ||
+    key.startsWith("experience.") ||
+    key.startsWith("projects.")
+  );
+}
+
+function classifyFieldCandidate(
+  candidate: FieldScanCandidate,
+  profile: ApplicantProfile
+): DetectedFieldMatch {
+  const evaluations = FIELD_DEFINITIONS.map((definition) =>
+    evaluateDefinition(candidate, definition, profile)
+  ).sort((left, right) => right.score - left.score);
+
+  const top = evaluations[0];
+  const runnerUp = evaluations[1];
+  const confidence = determineConfidence(top, runnerUp);
+
+  if (confidence === "unmatched") {
+    return {
+      ...candidate,
+      matchedKey: null,
+      matchedLabel: "",
+      matchedValuePreview: "",
+      hasValue: false,
+      confidence,
+      score: top?.score ?? 0,
+      matchedSignals: top?.signals.slice(0, 4) ?? []
+    };
+  }
+
+  return {
+    ...candidate,
+    matchedKey: top.key,
+    matchedLabel: top.label,
+    matchedValuePreview: top.valuePreview,
+    hasValue: top.hasValue,
+    confidence,
+    score: top.score,
+    matchedSignals: top.signals.slice(0, 6)
+  };
+}
+
+function evaluateDefinition(
+  candidate: FieldScanCandidate,
+  definition: FieldDefinition,
+  profile: ApplicantProfile
+): FieldEvaluation {
+  const signals: string[] = [];
+  let score = 0;
+
+  score += scoreSource(candidate.label, definition.synonyms, 14, "label", signals);
+  score += scoreSource(candidate.name, definition.synonyms, 11, "name", signals);
+  score += scoreSource(candidate.elementId, definition.synonyms, 10, "id", signals);
+  score += scoreSource(
+    candidate.placeholder,
+    definition.synonyms,
+    9,
+    "placeholder",
+    signals
+  );
+  score += scoreSource(
+    candidate.ariaLabel,
+    definition.synonyms,
+    9,
+    "aria",
+    signals
+  );
+  score += scoreSource(
+    candidate.sectionHeading,
+    definition.synonyms,
+    7,
+    "section",
+    signals
+  );
+  score += scoreSource(
+    candidate.nearbyText,
+    definition.synonyms,
+    5,
+    "nearby",
+    signals
+  );
+  score += scoreSource(
+    candidate.optionLabels.join(" "),
+    definition.synonyms,
+    4,
+    "options",
+    signals
+  );
+  score += scoreSource(
+    candidate.adapterSignals.join(" "),
+    definition.synonyms,
+    10,
+    "adapter",
+    signals
+  );
+  score += scoreSource(
+    candidate.autocomplete,
+    definition.autocomplete ?? [],
+    18,
+    "autocomplete",
+    signals,
+    true
+  );
+
+  if (definition.preferredTags?.includes(candidate.elementTag)) {
+    score += 4;
+    pushUnique(signals, `tag:${candidate.elementTag}`);
+  }
+
+  if (definition.preferredInputTypes?.includes(candidate.inputType)) {
+    score += 5;
+    pushUnique(signals, `type:${candidate.inputType}`);
+  }
+
+  if (definition.disallowedInputTypes?.includes(candidate.inputType)) {
+    score -= 8;
+  }
+
+  if (candidate.required) {
+    score += 1;
+  }
+
+  const value = definition.getValue(profile);
+
+  return {
+    key: definition.key,
+    label: definition.label,
+    score,
+    signals,
+    valuePreview: value.preview,
+    hasValue: value.hasValue
+  };
+}
+
+function determineConfidence(
+  top: FieldEvaluation | undefined,
+  runnerUp: FieldEvaluation | undefined
+): MatchConfidence {
+  if (!top || top.score < 12) {
+    return "unmatched";
+  }
+
+  let adjustedScore = top.score;
+  const scoreGap = top.score - (runnerUp?.score ?? 0);
+
+  if (scoreGap < 4) {
+    adjustedScore -= 4;
+  }
+
+  if (top.signals.length <= 1) {
+    adjustedScore -= 3;
+  }
+
+  if (adjustedScore >= 28) {
+    return "high";
+  }
+
+  if (adjustedScore >= 19) {
+    return "medium";
+  }
+
+  if (adjustedScore >= 12) {
+    return "low";
+  }
+
+  return "unmatched";
+}
+
+function scoreSource(
+  rawSource: string,
+  phrases: string[],
+  weight: number,
+  sourceLabel: string,
+  signals: string[],
+  requireExact = false
+): number {
+  if (!rawSource || phrases.length === 0) {
+    return 0;
+  }
+
+  const normalizedSource = normalizeText(rawSource);
+
+  if (!normalizedSource) {
+    return 0;
+  }
+
+  for (const phrase of phrases) {
+    const normalizedPhrase = normalizeText(phrase);
+
+    if (!normalizedPhrase) {
+      continue;
+    }
+
+    const matches = requireExact
+      ? normalizedSource === normalizedPhrase ||
+        normalizedSource.startsWith(`${normalizedPhrase} `)
+      : normalizedSource.includes(normalizedPhrase);
+
+    if (matches) {
+      pushUnique(signals, `${sourceLabel}:${phrase}`);
+      return weight;
+    }
+  }
+
+  return 0;
+}
+
+function templateValue(
+  profile: ApplicantProfile,
+  category: TemplateCategory
+): ResolvedProfileValue {
+  const answer =
+    profile.templates.find((template) => template.category === category)?.answer ?? "";
+
+  return textValue(answer);
+}
+
+function documentValue(
+  document: ApplicantProfile["documents"]["resume"] | ApplicantProfile["documents"]["coverLetter"],
+  fallbackLabel: string
+): ResolvedProfileValue {
+  if (!document) {
+    return {
+      raw: null,
+      preview: fallbackLabel,
+      hasValue: false
+    };
+  }
+
+  return {
+    raw: document.fileName || document.name,
+    preview: truncatePreview(document.fileName || document.name),
+    hasValue: true
+  };
+}
+
+function textValue(value: string | undefined): ResolvedProfileValue {
+  const nextValue = value?.trim() ?? "";
+
+  return {
+    raw: nextValue || null,
+    preview: truncatePreview(nextValue),
+    hasValue: Boolean(nextValue)
+  };
+}
+
+function listValue(values: string[] | undefined): ResolvedProfileValue {
+  if (!values || values.length === 0) {
+    return emptyValue();
+  }
+
+  return {
+    raw: values,
+    preview: truncatePreview(values.join(", ")),
+    hasValue: true
+  };
+}
+
+function emptyValue(): ResolvedProfileValue {
+  return {
+    raw: null,
+    preview: "",
+    hasValue: false
+  };
+}
+
+function truncatePreview(value: string, maxLength = 88): string {
+  if (!value) {
+    return "";
+  }
+
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
+function pushUnique(values: string[], value: string): void {
+  if (!values.includes(value)) {
+    values.push(value);
+  }
+}
+
+function normalizeText(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_\-/.]+/g, " ")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toSentenceCase(value: string): string {
+  if (!value) {
+    return "";
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
