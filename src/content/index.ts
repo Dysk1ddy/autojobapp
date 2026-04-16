@@ -1357,6 +1357,21 @@ function setChoiceControlChecked(
       return false;
     }
 
+    const clickTarget = checked ? resolveNativeChoiceClickTarget(element) : null;
+
+    if (clickTarget) {
+      clickTarget.focus?.();
+      clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      clickTarget.click();
+      dispatchEvents(element, ["input", "change", "blur"]);
+      highlightFilledElement(element);
+      highlightFilledElement(clickTarget);
+
+      if (element.checked === checked) {
+        return true;
+      }
+    }
+
     element.focus();
     setNativeChecked(element, checked);
     dispatchEvents(element, ["input", "change", "blur"]);
@@ -1429,7 +1444,11 @@ function getChoiceControlTokens(element: ChoiceControl): string[] {
 function getChoiceControlLabel(element: ChoiceControl): string {
   if (element instanceof HTMLInputElement) {
     return cleanText(
-      element.labels?.[0]?.textContent || element.closest("label")?.textContent
+      getNativeChoiceLabelElements(element)
+        .map((label) => label.textContent || "")
+        .find((text) => Boolean(cleanText(text))) ||
+        element.labels?.[0]?.textContent ||
+        element.closest("label")?.textContent
     );
   }
 
@@ -1439,6 +1458,43 @@ function getChoiceControlLabel(element: ChoiceControl): string {
       element.closest("label")?.textContent ||
       element.textContent
   );
+}
+
+function getNativeChoiceLabelElements(element: HTMLInputElement): HTMLElement[] {
+  const labels = Array.from(element.labels ?? []);
+
+  if (labels.length > 0) {
+    return dedupeElements(labels);
+  }
+
+  const fallback: HTMLElement[] = [];
+  const closestLabel = element.closest("label");
+
+  if (closestLabel instanceof HTMLElement) {
+    fallback.push(closestLabel);
+  }
+
+  if (element.id) {
+    fallback.push(
+      ...Array.from(
+        document.querySelectorAll<HTMLElement>(`label[for="${element.id}"]`)
+      )
+    );
+  }
+
+  return dedupeElements(fallback);
+}
+
+function resolveNativeChoiceClickTarget(
+  element: HTMLInputElement
+): HTMLElement | HTMLInputElement | null {
+  const visibleLabel = getNativeChoiceLabelElements(element).find(isVisibleElement);
+
+  if (visibleLabel) {
+    return visibleLabel;
+  }
+
+  return isVisibleField(element) ? element : null;
 }
 
 function getCustomChoiceGroupingKey(field: CustomFormControl): string | null {
@@ -1470,10 +1526,50 @@ function extractChoiceGroupLabel(field: FormControl): string {
 
   return cleanText(
     resolveAriaReferenceText(container ?? field, "aria-labelledby") ||
+      extractChoicePromptText(container) ||
       container?.querySelector("legend, [role='heading'], label")?.textContent ||
       container?.getAttribute("aria-label") ||
       ""
   );
+}
+
+function extractChoicePromptText(container: HTMLElement | null): string {
+  if (!container) {
+    return "";
+  }
+
+  const directPrompt = Array.from(container.children)
+    .filter((child): child is HTMLElement => child instanceof HTMLElement)
+    .find((child) => {
+      if (
+        child.matches(
+          "label, input, select, textarea, [role='radio'], [role='checkbox'], [role='option']"
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        child.querySelector(
+          "input, select, textarea, [role='radio'], [role='checkbox'], [role='option']"
+        )
+      ) {
+        return false;
+      }
+
+      return Boolean(cleanText(child.textContent || ""));
+    });
+
+  if (directPrompt) {
+    return cleanText(directPrompt.textContent || "");
+  }
+
+  const textNodes = Array.from(container.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE)
+    .map((node) => cleanText(node.textContent || ""))
+    .filter(Boolean);
+
+  return textNodes[0] ?? "";
 }
 
 function resolveChoiceGroupContainer(field: FormControl): HTMLElement | null {
@@ -1626,9 +1722,15 @@ function doesChoiceGroupMatchValue(
     );
   }
 
-  return normalizedValues.every((needle) =>
-    checkedOptions.some((element) => doesChoiceElementMatchNeedles(element, [needle]))
+  const expectedOptions = options.filter((element) =>
+    doesChoiceElementMatchNeedles(element, normalizedValues)
   );
+
+  if (expectedOptions.length === 0) {
+    return false;
+  }
+
+  return expectedOptions.every(isChoiceControlChecked);
 }
 
 function doesChoiceElementMatchNeedles(
@@ -2061,7 +2163,7 @@ function isScannableFieldElement(field: FormControl): boolean {
     return true;
   }
 
-  if (!isVisibleField(field)) {
+  if (!isVisibleField(field) && !isHiddenButScannableChoiceField(field)) {
     return false;
   }
 
@@ -2104,6 +2206,47 @@ function isVisibleField(field: FormControl): boolean {
   }
 
   return !isDisabledField(field);
+}
+
+function isHiddenButScannableChoiceField(field: FormControl): boolean {
+  if (!isNativeChoiceControl(field)) {
+    return false;
+  }
+
+  const labelElements = getNativeChoiceLabelElements(field);
+
+  if (labelElements.some(isVisibleElement)) {
+    return true;
+  }
+
+  const container = resolveChoiceGroupContainer(field);
+  return Boolean(container && isVisibleElement(container));
+}
+
+function isVisibleElement(element: HTMLElement): boolean {
+  if (element.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const hiddenByContainer = Boolean(
+    element.closest("[hidden], [aria-hidden='true']")
+  );
+
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    hiddenByContainer
+  ) {
+    return false;
+  }
+
+  if (rect.width > 0 && rect.height > 0) {
+    return true;
+  }
+
+  return Boolean(cleanText(element.textContent || "")) || element.isConnected;
 }
 
 function isTextLikeCandidate(candidate: FieldScanCandidate): boolean {
@@ -2293,12 +2436,10 @@ function extractOptionLabels(field: FormControl): string[] {
         (input) =>
           input.type === field.type &&
           input.name === field.name &&
-          isVisibleField(input)
+          (isVisibleField(input) || isHiddenButScannableChoiceField(input))
       )
       .map((input) =>
-        cleanText(
-          input.labels?.[0]?.textContent || input.closest("label")?.textContent
-        )
+        cleanText(getChoiceControlLabel(input))
       )
       .filter(Boolean)
       .slice(0, 8);

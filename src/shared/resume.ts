@@ -20,6 +20,46 @@ export interface ResumeImportOptions {
   documentReference?: Partial<DocumentReference>;
 }
 
+export function createResumeImportBaseProfile(
+  profile: ApplicantProfile
+): ApplicantProfile {
+  const nextProfile = cloneProfile(profile);
+
+  nextProfile.personal = {
+    ...nextProfile.personal,
+    firstName: "",
+    lastName: "",
+    fullName: "",
+    headline: "",
+    summary: ""
+  };
+  nextProfile.contact = {
+    ...nextProfile.contact,
+    email: "",
+    phone: "",
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    country: ""
+  };
+  nextProfile.links = {
+    ...nextProfile.links,
+    linkedin: "",
+    github: "",
+    portfolio: "",
+    website: ""
+  };
+  nextProfile.education = [];
+  nextProfile.experience = [];
+  nextProfile.projects = [];
+  nextProfile.skills = [];
+  nextProfile.certifications = [];
+
+  return nextProfile;
+}
+
 export function importResumeTextIntoProfile(
   profile: ApplicantProfile,
   rawText: string,

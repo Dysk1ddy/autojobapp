@@ -184,6 +184,7 @@ Responsible for:
 - lazy-loading the file parser modules so the options UI stays lighter on first load
 - extracting contact details, summary, skills, and first-pass experience or education hints
 - optionally sending locally extracted resume text to OpenAI so ChatGPT can map more of an uploaded resume into structured profile fields
+- starting resume imports from a clean import base so uploaded resumes replace the sample seed instead of silently preserving placeholder values
 - updating the draft profile for review before the user saves it
 
 ### Repeated-fill layer

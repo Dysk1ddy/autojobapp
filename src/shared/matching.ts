@@ -304,6 +304,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "eligible to work"
     ],
     preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) => listValue(profile.workAuthorization.authorizedCountries)
   },
   {
@@ -316,6 +317,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "sponsorship required"
     ],
     preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
       textValue(toSentenceCase(profile.workAuthorization.requiresSponsorship))
   },
@@ -329,6 +331,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "in the future require sponsorship"
     ],
     preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
       textValue(toSentenceCase(profile.workAuthorization.requiresFutureSponsorship))
   },
@@ -337,6 +340,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: "Relocation preference",
     synonyms: ["willing to relocate", "relocation", "open to relocation"],
     preferredTags: ["select", "input"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
       textValue(toSentenceCase(profile.workAuthorization.willingToRelocate))
   },
@@ -366,6 +370,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "introduction"
     ],
     preferredTags: ["textarea"],
+    disallowedInputTypes: ["radio", "checkbox"],
     getValue: (profile) => templateValue(profile, "cover-note")
   },
   {
@@ -379,6 +384,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "why this company"
     ],
     preferredTags: ["textarea"],
+    disallowedInputTypes: ["radio", "checkbox"],
     getValue: (profile) => templateValue(profile, "motivation")
   },
   {
@@ -392,6 +398,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "pay expectation"
     ],
     preferredTags: ["textarea", "input", "select"],
+    disallowedInputTypes: ["radio", "checkbox"],
     getValue: (profile) => templateValue(profile, "salary")
   },
   {
@@ -399,6 +406,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: "Relocation answer",
     synonyms: ["relocation", "willing to relocate", "open to relocation"],
     preferredTags: ["textarea", "input", "select"],
+    disallowedInputTypes: ["radio", "checkbox"],
     getValue: (profile) => templateValue(profile, "relocation")
   },
   {
@@ -411,6 +419,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "need sponsorship"
     ],
     preferredTags: ["textarea", "input", "select"],
+    disallowedInputTypes: ["radio", "checkbox"],
     getValue: (profile) => templateValue(profile, "sponsorship")
   }
 ];

@@ -374,6 +374,9 @@ export interface ResumeImportRequestPayload {
   parserLabel: string;
   warnings: string[];
   documentReference?: Partial<DocumentReference>;
+  settingsOverride?: Partial<
+    Pick<ExtensionSettings, "openAiApiKey" | "aiAssistModel" | "aiCustomInstructions">
+  >;
 }
 
 export interface RuntimeResumeImportPayload {

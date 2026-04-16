@@ -518,6 +518,90 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills a hidden native radio group through visible labels", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="question">
+          <div>Will you require sponsorship in the future?</div>
+          <input type="radio" id="future-hidden-yes" name="future-sponsorship" style="display: none;" />
+          <label for="future-hidden-yes">Yes</label>
+          <input type="radio" id="future-hidden-no" name="future-sponsorship" style="display: none;" />
+          <label for="future-hidden-no">No</label>
+        </div>
+      </form>
+    `;
+
+    const yesInput = document.getElementById("future-hidden-yes") as HTMLInputElement;
+    const noInput = document.getElementById("future-hidden-no") as HTMLInputElement;
+    document.querySelectorAll<HTMLLabelElement>('label[for]').forEach((label) => {
+      label.addEventListener("click", () => {
+        if (label.htmlFor === "future-hidden-yes") {
+          yesInput.checked = true;
+          noInput.checked = false;
+        } else if (label.htmlFor === "future-hidden-no") {
+          yesInput.checked = false;
+          noInput.checked = true;
+        }
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.requiresFutureSponsorship = "no";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/hidden-radio",
+      title: "Hidden Radio"
+    });
+
+    expect(noInput.checked).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills checkbox groups even when the profile has more values than the page exposes", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="question">
+          <div>Skills</div>
+          <input type="checkbox" id="skills-hidden-typescript" name="skills" style="display: none;" />
+          <label for="skills-hidden-typescript">TypeScript</label>
+          <input type="checkbox" id="skills-hidden-react" name="skills" style="display: none;" />
+          <label for="skills-hidden-react">React</label>
+          <input type="checkbox" id="skills-hidden-go" name="skills" style="display: none;" />
+          <label for="skills-hidden-go">Go</label>
+        </div>
+      </form>
+    `;
+
+    document.querySelectorAll<HTMLLabelElement>('label[for]').forEach((label) => {
+      label.addEventListener("click", () => {
+        const input = document.getElementById(label.htmlFor) as HTMLInputElement | null;
+
+        if (input) {
+          input.checked = !input.checked;
+        }
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.skills = ["TypeScript", "React", "Node.js", "Playwright"];
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/hidden-checkboxes",
+      title: "Hidden Checkboxes"
+    });
+
+    expect(
+      (document.getElementById("skills-hidden-typescript") as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (document.getElementById("skills-hidden-react") as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (document.getElementById("skills-hidden-go") as HTMLInputElement).checked
+    ).toBe(false);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("retries a text fill when the page clears the first attempt", async () => {
     document.body.innerHTML = `
       <form>

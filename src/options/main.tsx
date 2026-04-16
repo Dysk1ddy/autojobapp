@@ -39,6 +39,7 @@ import {
   writeState
 } from "../shared/core";
 import { importResumeTextIntoProfile } from "../shared/resume";
+import { createResumeImportBaseProfile } from "../shared/resume";
 
 const TEMPLATE_CATEGORIES: Array<{ label: string; value: TemplateCategory }> = [
   { label: "Cover note", value: "cover-note" },
@@ -368,7 +369,10 @@ function OptionsApp() {
     setStatus("Parsing pasted resume text...");
 
     try {
-      const result = importResumeTextIntoProfile(draftProfile, resumeImportText);
+      const result = importResumeTextIntoProfile(
+        createResumeImportBaseProfile(draftProfile),
+        resumeImportText
+      );
       const nextState = await updateStoredState((current) => ({
         ...current,
         lastResumeImport: result.summary
@@ -406,14 +410,18 @@ function OptionsApp() {
         resumeImportFile,
         "local"
       );
-      const result = importResumeTextIntoProfile(draftProfile, extracted.text, {
-        sourceKind: "local-file",
-        sourceName: extracted.fileName,
-        sourceMimeType: extracted.mimeType,
-        parserLabel: extracted.parserLabel,
-        warnings: extracted.warnings,
-        documentReference
-      });
+      const result = importResumeTextIntoProfile(
+        createResumeImportBaseProfile(draftProfile),
+        extracted.text,
+        {
+          sourceKind: "local-file",
+          sourceName: extracted.fileName,
+          sourceMimeType: extracted.mimeType,
+          parserLabel: extracted.parserLabel,
+          warnings: extracted.warnings,
+          documentReference
+        }
+      );
       const nextState = await updateStoredState((current) => ({
         ...current,
         lastResumeImport: result.summary
@@ -464,14 +472,19 @@ function OptionsApp() {
       const response = await sendRuntimeMessage({
         type: "AI_PARSE_RESUME",
         payload: {
-          profile: draftProfile,
+          profile: createResumeImportBaseProfile(draftProfile),
           resumeText: extracted.text,
           sourceKind: "local-file",
           sourceName: extracted.fileName,
           sourceMimeType: extracted.mimeType,
           parserLabel: extracted.parserLabel,
           warnings: extracted.warnings,
-          documentReference
+          documentReference,
+          settingsOverride: {
+            openAiApiKey: draftSettings.openAiApiKey,
+            aiAssistModel: draftSettings.aiAssistModel,
+            aiCustomInstructions: draftSettings.aiCustomInstructions
+          }
         }
       });
 

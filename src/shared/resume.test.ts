@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultApplicantProfile } from "./core";
-import { importResumeTextIntoProfile } from "./resume";
+import { createResumeImportBaseProfile, importResumeTextIntoProfile } from "./resume";
 import { loadFixture } from "../test/fixture-loader";
 
 describe("importResumeTextIntoProfile", () => {
-  it("imports structured resume text into the draft profile", () => {
+  it("creates a clean resume import base while preserving non-resume settings", () => {
     const profile = createDefaultApplicantProfile();
+    profile.label = "Custom profile";
+    profile.workAuthorization.requiresSponsorship = "yes";
+
+    const baseProfile = createResumeImportBaseProfile(profile);
+
+    expect(baseProfile.label).toBe("Custom profile");
+    expect(baseProfile.personal.fullName).toBe("");
+    expect(baseProfile.contact.email).toBe("");
+    expect(baseProfile.links.linkedin).toBe("");
+    expect(baseProfile.education).toHaveLength(0);
+    expect(baseProfile.experience).toHaveLength(0);
+    expect(baseProfile.skills).toHaveLength(0);
+    expect(baseProfile.workAuthorization.requiresSponsorship).toBe("yes");
+  });
+
+  it("imports structured resume text into the draft profile", () => {
+    const profile = createResumeImportBaseProfile(createDefaultApplicantProfile());
     const fixture = loadFixture("resume-sample.txt");
 
     const result = importResumeTextIntoProfile(profile, fixture);

@@ -281,10 +281,16 @@ async function parseResumeWithAi(
   payload: ResumeImportRequestPayload
 ): Promise<RuntimeResponse> {
   const state = await readState();
+  const effectiveSettings = payload.settingsOverride
+    ? {
+        ...state.settings,
+        ...payload.settingsOverride
+      }
+    : state.settings;
   const resumeImport = await generateAiResumeImport(
     payload.profile,
     payload.resumeText,
-    state.settings,
+    effectiveSettings,
     {
       sourceKind: payload.sourceKind,
       sourceName: payload.sourceName,
