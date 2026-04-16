@@ -963,6 +963,50 @@ describe("fillPage", () => {
     expect(result.fill.results[0]?.message).toContain("default yes/no policy");
   });
 
+  it("overrides unknown defaults on matched screening dropdowns and still picks no", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Do you have any plans to join the board of directors of a for-profit company prior to starting a job with Micron?
+          <select name="board_of_directors">
+            <option value="U">Unknown</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          All Micron sites must observe U.S. export control rules that control information that may be provided to persons from Cuba, Iran, North Korea, and Syria. Are you a citizen of, or do you hold dual citizenship with any of these countries?
+          <select name="export_control_citizenship">
+            <option value="U">Unknown</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.boardDirectorPlans = "unknown";
+    profile.workAuthorization.exportControlCitizenship = "unknown";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/unknown-defaults",
+      title: "Unknown Default Screening"
+    });
+
+    expect(
+      (document.querySelector(
+        'select[name="board_of_directors"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="export_control_citizenship"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
   it("defaults authorization-style yes-no questions to yes", async () => {
     document.body.innerHTML = `
       <form>

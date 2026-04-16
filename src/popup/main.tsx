@@ -19,23 +19,12 @@ import {
   summarizeApplicantProfile
 } from "../shared/core";
 
-const roadmap = [
-  "Step 1: extension foundation",
-  "Step 2: applicant profile schema",
-  "Step 3: field detection and matching",
-  "Step 4: autofill engine",
-  "Step 5: profile editor and fill preview",
-  "Step 6: ATS adapters",
-  "Step 7: resume import, templates, and workflows",
-  "Step 8: tests and hardening",
-  "Step 9: file import, repeated fill, and browser QA",
-  "Step 10: multi-profile popup flow, lazy parsers, and ATS browser QA",
-  "Step 11: fill modes, auto-submit, and saved resume upload",
-  "Step 12: profile backup import and export",
-  "Step 13: AI-assisted autofill",
-  "Step 14: fully auto AI override",
-  "Step 15: expanded AI controls",
-  "Step 16: keyboard shortcut and resume upload"
+const popupHighlights = [
+  "Scan the current application, preview ready matches, and autofill from the popup or keyboard shortcut.",
+  "Use saved applicant profiles, JSON backups, upload-ready resumes, and draft-based options editing.",
+  "Run deterministic autofill first, then optionally let AI assist on ambiguous blanks with review-first safeguards.",
+  "Handle text fields, selects, radios, checkboxes, resume uploads, repeated sections, and common ATS flows.",
+  "Default yes-no policy: answer No unless the question is about being authorized or legally eligible to work."
 ];
 
 function PopupApp() {
@@ -384,9 +373,9 @@ function PopupApp() {
           <span className="eyebrow">AutoJobApp</span>
           <h1>Preview first. Fill second.</h1>
           <p>
-            Step 16 adds a keyboard shortcut for autofill and lets the saved
-            resume attach itself to detected resume upload fields while keeping
-            the newer AI controls in place.
+            Scan the active application, preview what will change, and autofill
+            with saved profile data, resume uploads, deterministic yes-no
+            defaults, and optional AI assistance when you want extra help.
           </p>
         </div>
         <div className="badge-row">
@@ -898,20 +887,21 @@ function PopupApp() {
           </>
         ) : (
           <p className="muted">
-            Use the autofill button to apply only high-confidence values with
-            saved answers to the current job application page.
+            Use the autofill button or keyboard shortcut to apply the current
+            profile, fill-mode rules, resume upload, and yes-no policy to the
+            active job application page.
           </p>
         )}
       </section>
 
       <section className="surface">
         <div className="section-head">
-          <h2>Roadmap</h2>
-          <span className="inline-note">Current milestone: Step 16</span>
+          <h2>What The Popup Does</h2>
+          <span className="inline-note">Current scan, fill, and review controls</span>
         </div>
         <ul className="roadmap-list">
-          {roadmap.map((item, index) => (
-            <li key={item} className={index <= 15 ? "roadmap-active" : ""}>
+          {popupHighlights.map((item) => (
+            <li key={item} className="roadmap-active">
               {item}
             </li>
           ))}

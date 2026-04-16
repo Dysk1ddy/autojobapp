@@ -74,6 +74,14 @@ const RELOCATION_OPTIONS: Array<{
   { label: "No", value: "no" }
 ];
 
+const WORKSPACE_HIGHLIGHTS = [
+  "Edit the active applicant profile as a draft, then save or discard changes without touching raw JSON.",
+  "Control fill mode, auto-submit, fully auto, AI scope, AI priority, and deterministic yes-no behavior from one place.",
+  "Link an upload-ready resume, import local `.txt`, `.pdf`, or `.docx` files, and send extracted resume text to ChatGPT when you want AI help.",
+  "Store employer-specific screening answers such as ethnicity, self-identification language, age eligibility, export-control prompts, and board-of-directors disclosures.",
+  "Verify the saved OpenAI API key, inspect scan and fill results, and export or restore full profile backups for debugging."
+];
+
 function OptionsApp() {
   const [state, setState] = useState<StoredState>(() => createDefaultState());
   const [draftProfile, setDraftProfile] = useState<ApplicantProfile | null>(
@@ -752,21 +760,13 @@ function OptionsApp() {
     <main className="page-shell options-shell">
       <section className="surface hero-card wide-hero">
         <div className="hero-copy">
-          <span className="eyebrow">Step 16 shortcuts, resume upload, and AI workflow control</span>
+          <span className="eyebrow">Profile Workspace</span>
           <h1>Edit what gets filled before you ever touch submit.</h1>
           <p>
-            The options page now works like a real drafting workspace instead of
-            a raw JSON viewer. You can update the active applicant profile,
-            change how aggressive autofill should be, opt into final-step
-            auto-submit, enable AI-assisted autofill with your own OpenAI API
-            key, decide how much control AI should have over field selection and
-            value priority, decide whether AI-assisted fills must stay
-            review-first or can run fully auto, attach a saved resume that can
-            be auto-uploaded into detected resume fields, import resume files or
-            pasted text into the draft profile with on-demand parsers, send an
-            uploaded resume through ChatGPT to map more fields into the draft
-            profile, and
-            inspect both ATS adapter behavior and multi-step application flow.
+            The options page is the extension's local control center. Set up
+            applicant data, screening answers, saved documents, AI settings,
+            and backup files here, then use the popup to scan and autofill real
+            application pages with the behavior you configured.
           </p>
         </div>
         <div className="badge-row">
@@ -2604,35 +2604,20 @@ function OptionsApp() {
 
       <section className="surface">
         <div className="section-head">
-          <h2>What exists today</h2>
-          <span className="inline-note">Settings, uploads, workflows, and autofill</span>
+          <h2>Current Capabilities</h2>
+          <span className="inline-note">Profile editing, AI controls, uploads, and debugging</span>
         </div>
         <ul className="roadmap-list">
-          <li className="roadmap-active">
-            The options page now edits the active applicant profile directly
+          {WORKSPACE_HIGHLIGHTS.map((item) => (
+            <li key={item} className="roadmap-active">
+              {item}
+            </li>
+          ))}
+          <li>
+            Resume auto-upload works when a page exposes a standard or
+            reachable file input. Fully custom upload widgets can still require
+            manual confirmation.
           </li>
-          <li className="roadmap-active">
-            Fill mode, auto-submit, fully auto, AI scope, and AI value priority are now saved extension settings
-          </li>
-          <li className="roadmap-active">
-            AI-assisted autofill can now be enabled with a saved OpenAI API key
-          </li>
-          <li className="roadmap-active">
-            A resume file can now be linked as the saved upload-ready resume for
-            the active profile
-          </li>
-          <li className="roadmap-active">
-            Resume text can be imported locally into the draft profile for
-            review before saving
-          </li>
-          <li className="roadmap-active">
-            Greenhouse, Lever, and Workday adapters now enrich label and
-            section detection during scans
-          </li>
-          <li className="roadmap-active">
-            Multi-step workflow hints now show current step and next actions
-          </li>
-          <li>Live file inputs on job sites still require manual interaction</li>
         </ul>
       </section>
 

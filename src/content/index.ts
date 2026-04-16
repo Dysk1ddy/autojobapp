@@ -1111,7 +1111,7 @@ function createBinaryChoicePolicyTarget(
       resolvedValue: ResolvedProfileValue;
     }
   | null {
-  if (!isBinaryYesNoPolicyField(group)) {
+  if (!isBinaryYesNoPolicyField(match, group)) {
     return null;
   }
 
@@ -1931,8 +1931,12 @@ function getChoiceElements(group: CandidateGroup): ChoiceControl[] {
   );
 }
 
-function isBinaryYesNoPolicyField(group: CandidateGroup): boolean {
+function isBinaryYesNoPolicyField(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
   const primaryElement = resolvePrimaryElement(group);
+  const searchable = buildBinaryPolicySearchText(match, group);
 
   if (isChoiceGroup(group)) {
     const options = getChoiceElements(group);
@@ -1941,28 +1945,37 @@ function isBinaryYesNoPolicyField(group: CandidateGroup): boolean {
       return false;
     }
 
-    return hasBinaryYesNoTokens(
-      options.flatMap((option) => getChoiceControlTokens(option))
+    const tokens = options.flatMap((option) => getChoiceControlTokens(option));
+    return (
+      hasBinaryYesNoTokens(tokens) ||
+      (isKnownYesNoPolicyKey(match.matchedKey) && hasUnknownChoiceToken(tokens)) ||
+      looksLikeBinaryQuestion(searchable)
     );
   }
 
   if (primaryElement instanceof HTMLSelectElement) {
-    return hasBinaryYesNoTokens(
-      Array.from(primaryElement.options).flatMap((option) => [
-        option.textContent ?? "",
-        option.label ?? "",
-        option.value ?? ""
-      ])
+    const tokens = Array.from(primaryElement.options).flatMap((option) => [
+      option.textContent ?? "",
+      option.label ?? "",
+      option.value ?? ""
+    ]);
+    return (
+      hasBinaryYesNoTokens(tokens) ||
+      (isKnownYesNoPolicyKey(match.matchedKey) && hasUnknownChoiceToken(tokens)) ||
+      looksLikeBinaryQuestion(searchable)
     );
   }
 
   if (primaryElement && isCustomSelectionControl(primaryElement)) {
-    return hasBinaryYesNoTokens(
-      getAssociatedOptionElements(primaryElement).flatMap((option) => [
-        option.textContent ?? "",
-        option.getAttribute("aria-label") ?? "",
-        option.getAttribute("data-value") ?? ""
-      ])
+    const tokens = getAssociatedOptionElements(primaryElement).flatMap((option) => [
+      option.textContent ?? "",
+      option.getAttribute("aria-label") ?? "",
+      option.getAttribute("data-value") ?? ""
+    ]);
+    return (
+      hasBinaryYesNoTokens(tokens) ||
+      (isKnownYesNoPolicyKey(match.matchedKey) && hasUnknownChoiceToken(tokens)) ||
+      looksLikeBinaryQuestion(searchable)
     );
   }
 
@@ -1997,11 +2010,31 @@ function normalizeBinaryChoiceToken(
   return null;
 }
 
-function shouldDefaultYesForBinaryQuestion(
+function hasUnknownChoiceToken(values: string[]): boolean {
+  return values.some((value) => {
+    const normalized = normalizeText(cleanText(value));
+    return ["unknown", "undisclosed", "unset"].includes(normalized);
+  });
+}
+
+function isKnownYesNoPolicyKey(key: ProfileFieldKey | null): boolean {
+  return [
+    "workAuthorization.requiresSponsorship",
+    "workAuthorization.requiresFutureSponsorship",
+    "workAuthorization.isAtLeast18",
+    "workAuthorization.canVerifyLegalWorkRight",
+    "workAuthorization.terminationHistory",
+    "workAuthorization.friendsOrRelativesAtCompany",
+    "workAuthorization.exportControlCitizenship",
+    "workAuthorization.boardDirectorPlans"
+  ].includes(key ?? "");
+}
+
+function buildBinaryPolicySearchText(
   match: DetectedFieldMatch,
   group: CandidateGroup
-): boolean {
-  const searchable = normalizeText(
+): string {
+  return normalizeText(
     [
       match.label,
       match.name,
@@ -2020,6 +2053,35 @@ function shouldDefaultYesForBinaryQuestion(
       ...group.candidate.optionLabels
     ].join(" ")
   );
+}
+
+function looksLikeBinaryQuestion(searchable: string): boolean {
+  if (!searchable) {
+    return false;
+  }
+
+  return (
+    searchable.includes(" are you ") ||
+    searchable.startsWith("are you ") ||
+    searchable.includes(" do you ") ||
+    searchable.startsWith("do you ") ||
+    searchable.includes(" have you ") ||
+    searchable.startsWith("have you ") ||
+    searchable.includes(" can you ") ||
+    searchable.startsWith("can you ") ||
+    searchable.includes(" will you ") ||
+    searchable.startsWith("will you ") ||
+    searchable.includes(" if employment is offered can you ") ||
+    searchable.includes(" legally authorized ") ||
+    searchable.includes(" legal right to work ")
+  );
+}
+
+function shouldDefaultYesForBinaryQuestion(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
+  const searchable = buildBinaryPolicySearchText(match, group);
 
   if (!searchable) {
     return false;
@@ -2093,7 +2155,7 @@ function doesChoiceElementMatchNeedles(
   const tokens = getChoiceControlTokens(element);
 
   return normalizedValues.some((needle) =>
-    tokens.some((token) => token === needle || token.includes(needle) || needle.includes(token))
+    tokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
   );
 }
 
@@ -2111,7 +2173,7 @@ function doesSelectMatchValue(
     .filter(Boolean);
 
   return currentTokens.some((token) =>
-    target.some((needle) => token === needle || token.includes(needle))
+    target.some((needle) => doesNormalizedOptionTokenMatch(token, needle))
   );
 }
 
@@ -2160,7 +2222,7 @@ function doesCustomSelectionMatchValue(
     .filter(Boolean);
 
   return normalizedValues.some((needle) =>
-    currentTokens.some((token) => token === needle || token.includes(needle))
+    currentTokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
   );
 }
 
@@ -2216,7 +2278,7 @@ function findMatchingCustomOption(
         .filter(Boolean);
 
       return normalizedValues.some((needle) =>
-        tokens.some((token) => token === needle || token.includes(needle) || needle.includes(token))
+        tokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
       );
     }) ?? null
   );
@@ -2552,7 +2614,7 @@ function findMatchingOption(
         .map((value) => normalizeText(cleanText(value ?? "")))
         .filter(Boolean);
       return normalizedTokens.some(
-        (token) => token.includes(needle) || needle.includes(token)
+        (token) => doesNormalizedOptionTokenMatch(token, needle)
       );
     });
 
@@ -2570,6 +2632,26 @@ function stringifyResolvedValue(resolvedValue: ResolvedProfileValue): string {
   }
 
   return resolvedValue.raw ?? "";
+}
+
+function doesNormalizedOptionTokenMatch(token: string, needle: string): boolean {
+  if (!token || !needle) {
+    return false;
+  }
+
+  if (token === needle) {
+    return true;
+  }
+
+  if (isStrictBinaryChoiceToken(token) || isStrictBinaryChoiceToken(needle)) {
+    return false;
+  }
+
+  return token.includes(needle) || needle.includes(token);
+}
+
+function isStrictBinaryChoiceToken(value: string): boolean {
+  return ["yes", "no", "true", "false", "y", "n", "unknown"].includes(value);
 }
 
 function normalizedNeedles(resolvedValue: ResolvedProfileValue): string[] {
