@@ -3,10 +3,7 @@ import {
   detectPlatformFromHostname
 } from "../shared/core";
 
-export type AdapterFormControl =
-  | HTMLInputElement
-  | HTMLTextAreaElement
-  | HTMLSelectElement;
+export type AdapterFormControl = HTMLElement;
 
 export interface PlatformAdapter {
   platform: SupportedPlatform;

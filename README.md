@@ -20,10 +20,11 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 14. Add a fully auto AI override that can bypass the default AI review safeguard.
 15. Add broader AI control settings for scope, priority, and custom instructions.
 16. Add a keyboard shortcut for autofill and auto-upload for saved resumes.
+17. Improve fill reliability for custom widgets and framework-driven rerenders.
 
-This repo is currently on Step 16.
+This repo is currently on Step 17.
 
-## What Step 16 includes
+## What Step 17 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -64,6 +65,9 @@ This repo is currently on Step 16.
 - Custom AI instructions for tone, style, and answer behavior
 - A Chrome extension shortcut for triggering autofill on the active job application page
 - Saved resume uploads that can now be attached to detected resume file inputs during autofill
+- Support for ARIA textboxes, contenteditable fields, comboboxes, and listboxes during scan and fill
+- Post-fill verification plus retry logic so framework rerenders are less likely to wipe values after autofill
+- Better option discovery for custom select-style controls and stronger label extraction through `aria-labelledby`
 - Vitest plus jsdom test harness
 - HTML fixtures for generic, Greenhouse, Lever, and Workday application pages
 - Resume import fixture coverage
@@ -73,7 +77,7 @@ This repo is currently on Step 16.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 16 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, and saved resumes can be uploaded automatically when a page exposes a resume-style file input.
+Step 17 is configurable where it matters. Neutral mode is now the default for new installs so medium-confidence matches get a first pass, Conservative mode only autofills `high` confidence matches, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, saved resumes can be uploaded automatically when a page exposes a resume-style file input, and custom widgets like contenteditable textboxes or ARIA comboboxes now get a native retry-and-verify fill pass.
 
 ## Project structure
 

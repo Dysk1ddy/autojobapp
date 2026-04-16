@@ -106,4 +106,57 @@ describe("scanPage", () => {
       )
     ).toBe(true);
   });
+
+  it("detects custom ARIA textbox and combobox controls in generic forms", () => {
+    document.body.innerHTML = `
+      <form>
+        <section>
+          <h2>Profile</h2>
+          <label id="motivation-label">Why are you interested in this role?</label>
+          <div
+            id="motivation-answer"
+            role="textbox"
+            contenteditable="true"
+            aria-labelledby="motivation-label"
+          ></div>
+          <label id="country-label">Country of residence</label>
+          <div
+            id="country-combobox"
+            role="combobox"
+            tabindex="0"
+            aria-labelledby="country-label"
+            aria-controls="country-options"
+          ></div>
+          <div id="country-options" role="listbox">
+            <div role="option">United States</div>
+            <div role="option">Canada</div>
+          </div>
+        </section>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const scan = scanPage(profile, {
+      href: "https://jobs.example.com/apply/custom-controls",
+      title: "Custom Controls"
+    });
+
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.fieldId === "div:motivation-answer" &&
+          match.elementTag === "custom" &&
+          match.inputType === "textbox" &&
+          match.matchedKey === "templates.motivation"
+      )
+    ).toBe(true);
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.fieldId === "div:country-combobox" &&
+          match.inputType === "combobox" &&
+          match.optionLabels.includes("United States")
+      )
+    ).toBe(true);
+  });
 });

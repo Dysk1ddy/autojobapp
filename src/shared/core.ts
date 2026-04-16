@@ -21,7 +21,7 @@ export type TemplateCategory =
 export type MatchConfidence = "high" | "medium" | "low" | "unmatched";
 export type FillMode = "conservative" | "neutral" | "liberal";
 export type AiAssistScope = "focused" | "expanded" | "aggressive";
-export type FieldElementTag = "input" | "textarea" | "select";
+export type FieldElementTag = "input" | "textarea" | "select" | "custom";
 export type FillAction = "filled" | "skipped" | "unsupported" | "error";
 export type FillSource = "profile" | "ai" | "none";
 export type AiAssistStatus =
@@ -418,7 +418,7 @@ export function createDefaultState(): StoredState {
 
 export function createDefaultSettings(): ExtensionSettings {
   return {
-    fillMode: "conservative",
+    fillMode: "neutral",
     autoSubmit: false,
     fullyAutoEnabled: false,
     aiAssistEnabled: false,

@@ -33,7 +33,15 @@ import {
   summarizeFieldMatches
 } from "../shared/matching";
 
-type FormControl = AdapterFormControl;
+type CustomFormControl = HTMLElement & {
+  __autoJobAppCustomControl?: true;
+};
+
+type FormControl =
+  | HTMLInputElement
+  | HTMLTextAreaElement
+  | HTMLSelectElement
+  | CustomFormControl;
 
 interface CandidateGroup {
   candidate: FieldScanCandidate;
@@ -53,8 +61,16 @@ interface RepeatableSectionConfig {
   getDesiredCount: (profile: ApplicantProfile) => number;
 }
 
+interface FillControlAttempt {
+  changed: boolean;
+  verified: boolean;
+  failureMessage: string;
+}
+
 const FILL_HIGHLIGHT_STYLE_ID = "autojobapp-fill-style";
 const FILL_HIGHLIGHT_CLASS = "autojobapp-fill-flash";
+const FILL_SETTLE_DELAY_MS = 180;
+const FILL_VERIFICATION_MAX_ATTEMPTS = 2;
 const REPEATABLE_SECTION_CONFIGS: RepeatableSectionConfig[] = [
   {
     prefix: "experience.",
@@ -223,16 +239,20 @@ export async function fillPage(
 
   ensureFillHighlightStyle();
 
-  const results = fieldMatches.map((match) =>
-    fillMatchedGroup(
-      match,
-      groupByFieldId.get(match.fieldId),
-      profile,
-      repeatEntryIndexByFieldId.get(match.fieldId) ?? 0,
-      settings,
-      aiSuggestionByFieldId.get(match.fieldId)
-    )
-  );
+  const results: FilledFieldResult[] = [];
+
+  for (const match of fieldMatches) {
+    results.push(
+      await fillMatchedGroup(
+        match,
+        groupByFieldId.get(match.fieldId),
+        profile,
+        repeatEntryIndexByFieldId.get(match.fieldId) ?? 0,
+        settings,
+        aiSuggestionByFieldId.get(match.fieldId)
+      )
+    );
+  }
 
   const scan = buildScanSummary(
     rawFields,
@@ -605,25 +625,17 @@ function buildCandidate(
   index: number,
   adapter: PlatformAdapter
 ): FieldScanCandidate {
-  const elementTag = field.tagName.toLowerCase() as FieldElementTag;
+  const elementTag = getFieldElementTag(field);
 
   return {
     fieldId: buildFieldId(field, index),
     selectorHint: buildSelectorHint(field, index),
     label: adapter.getLabel(field) || extractFieldLabel(field),
     elementTag,
-    inputType:
-      field instanceof HTMLInputElement
-        ? field.type.toLowerCase() || "text"
-        : elementTag === "textarea"
-          ? "textarea"
-          : "select",
+    inputType: detectFieldInputType(field),
     name: field.getAttribute("name")?.trim() ?? "",
     elementId: field.id.trim(),
-    placeholder:
-      field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
-        ? field.placeholder.trim()
-        : "",
+    placeholder: getFieldPlaceholder(field),
     ariaLabel: field.getAttribute("aria-label")?.trim() ?? "",
     autocomplete: field.getAttribute("autocomplete")?.trim() ?? "",
     sectionHeading: adapter.getSectionHeading(field) || extractSectionHeading(field),
@@ -633,19 +645,18 @@ function buildCandidate(
       ...extractOptionLabels(field)
     ]),
     adapterSignals: adapter.getSignals(field),
-    required:
-      field.required || field.getAttribute("aria-required")?.trim() === "true"
+    required: isRequiredField(field)
   };
 }
 
-function fillMatchedGroup(
+async function fillMatchedGroup(
   match: DetectedFieldMatch,
   group: CandidateGroup | undefined,
   profile: ApplicantProfile,
   repeatEntryIndex: number,
   settings: ExtensionSettings,
   aiSuggestion?: AiFieldSuggestion
-): FilledFieldResult {
+): Promise<FilledFieldResult> {
   if (!group) {
     return buildResult(
       match,
@@ -739,7 +750,7 @@ function fillMatchedGroup(
     );
   }
 
-  if (isAlreadyFilled(group, match, fillTarget.resolvedValue)) {
+  if (isAlreadyFilled(group, fillTarget.resolvedValue)) {
     return buildResult(
       match,
       "skipped",
@@ -755,18 +766,17 @@ function fillMatchedGroup(
 
   try {
     if (isChoiceGroup(group)) {
-      const changed = fillChoiceGroup(group, fillTarget.resolvedValue);
+      const attempt = await fillChoiceGroup(group, fillTarget.resolvedValue);
 
       return buildResult(
         match,
-        changed ? "filled" : "skipped",
+        attempt.verified ? "filled" : "skipped",
         fillTarget.resolvedValue.preview,
-        changed
+        attempt.verified
           ? fillTarget.source === "ai"
             ? "Filled a radio or checkbox choice using an AI suggestion."
             : "Filled a radio or checkbox choice."
-          : "A matching option was not found for this choice field."
-        ,
+          : attempt.failureMessage,
         {
           matchedKey: fillTarget.matchedKey,
           confidence: fillTarget.confidence,
@@ -775,7 +785,7 @@ function fillMatchedGroup(
       );
     }
 
-    const primaryElement = group.elements[0];
+    const primaryElement = resolvePrimaryElement(group);
 
     if (!primaryElement) {
       return buildResult(
@@ -792,18 +802,17 @@ function fillMatchedGroup(
     }
 
     if (primaryElement instanceof HTMLSelectElement) {
-      const changed = fillSelectControl(primaryElement, fillTarget.resolvedValue);
+      const attempt = await fillSelectControl(group, fillTarget.resolvedValue);
 
       return buildResult(
         match,
-        changed ? "filled" : "skipped",
+        attempt.verified ? "filled" : "skipped",
         fillTarget.resolvedValue.preview,
-        changed
+        attempt.verified
           ? fillTarget.source === "ai"
             ? "Filled a select control using an AI suggestion."
             : "Filled a select control."
-          : "No compatible select option was found."
-        ,
+          : attempt.failureMessage,
         {
           matchedKey: fillTarget.matchedKey,
           confidence: fillTarget.confidence,
@@ -812,18 +821,40 @@ function fillMatchedGroup(
       );
     }
 
-    const changed = fillTextControl(primaryElement, fillTarget.resolvedValue);
+    if (isCustomSelectionControl(primaryElement)) {
+      const attempt = await fillCustomSelectionControl(
+        group,
+        fillTarget.resolvedValue
+      );
+
+      return buildResult(
+        match,
+        attempt.verified ? "filled" : "skipped",
+        fillTarget.resolvedValue.preview,
+        attempt.verified
+          ? fillTarget.source === "ai"
+            ? "Filled a custom combobox or listbox using an AI suggestion."
+            : "Filled a custom combobox or listbox."
+          : attempt.failureMessage,
+        {
+          matchedKey: fillTarget.matchedKey,
+          confidence: fillTarget.confidence,
+          fillSource: fillTarget.source
+        }
+      );
+    }
+
+    const attempt = await fillTextControl(group, fillTarget.resolvedValue);
 
     return buildResult(
       match,
-      changed ? "filled" : "skipped",
+      attempt.verified ? "filled" : "skipped",
       fillTarget.resolvedValue.preview,
-      changed
+      attempt.verified
         ? fillTarget.source === "ai"
           ? "Filled a text-based control using an AI suggestion."
           : "Filled a text-based control."
-        : "The text control already matched or could not be updated."
-      ,
+        : attempt.failureMessage,
       {
         matchedKey: fillTarget.matchedKey,
         confidence: fillTarget.confidence,
@@ -1057,125 +1088,452 @@ function createAiResolvedValue(suggestion: AiFieldSuggestion): ResolvedProfileVa
 
 function isAlreadyFilled(
   group: CandidateGroup,
-  match: DetectedFieldMatch,
   resolvedValue: ResolvedProfileValue
 ): boolean {
   if (isChoiceGroup(group)) {
-    return group.elements.some(
-      (element) => element instanceof HTMLInputElement && element.checked
-    );
+    return doesChoiceGroupMatchValue(group, resolvedValue);
   }
 
-  const primaryElement = group.elements[0];
+  const primaryElement = resolvePrimaryElement(group);
 
   if (!primaryElement) {
     return false;
   }
 
   if (primaryElement instanceof HTMLSelectElement) {
-    const current = cleanText(
-      primaryElement.selectedOptions[0]?.textContent || primaryElement.value
-    );
-    const target = normalizedNeedles(resolvedValue)[0];
-
-    return Boolean(current) && (!target || normalizeText(current) === target);
+    return doesSelectMatchValue(primaryElement, resolvedValue);
   }
 
-  const currentValue = cleanText(primaryElement.value);
+  if (isCustomSelectionControl(primaryElement)) {
+    return doesCustomSelectionMatchValue(primaryElement, resolvedValue);
+  }
+
+  if (isTextFillControl(primaryElement)) {
+    return doesTextControlMatchValue(primaryElement, resolvedValue);
+  }
+
+  return false;
+}
+
+async function fillTextControl(
+  group: CandidateGroup,
+  resolvedValue: ResolvedProfileValue
+): Promise<FillControlAttempt> {
+  const targetValue = stringifyResolvedValue(resolvedValue);
+
+  if (!targetValue) {
+    return {
+      changed: false,
+      verified: false,
+      failureMessage: "The active profile does not contain a usable value for this text field."
+    };
+  }
+
+  return performVerifiedFill(
+    group,
+    () => {
+      const element = resolvePrimaryElement(group);
+
+      if (!element || !isTextFillControl(element)) {
+        return false;
+      }
+
+      if (doesTextControlMatchValue(element, resolvedValue)) {
+        return true;
+      }
+
+      element.focus();
+      setTextControlValue(element, targetValue);
+      dispatchEvents(element, ["input", "change", "blur"]);
+      highlightFilledElement(element);
+      return true;
+    },
+    () => {
+      const element = resolvePrimaryElement(group);
+      return Boolean(
+        element && isTextFillControl(element) && doesTextControlMatchValue(element, resolvedValue)
+      );
+    },
+    {
+      noMatchMessage: "The text control could not be updated.",
+      verificationFailureMessage:
+        "The page reset the text control after autofill, even after retrying."
+    }
+  );
+}
+
+async function fillSelectControl(
+  group: CandidateGroup,
+  resolvedValue: ResolvedProfileValue
+): Promise<FillControlAttempt> {
+  return performVerifiedFill(
+    group,
+    () => {
+      const element = resolvePrimaryElement(group);
+
+      if (!(element instanceof HTMLSelectElement)) {
+        return false;
+      }
+
+      const option = findMatchingOption(element.options, normalizedNeedles(resolvedValue));
+
+      if (!option) {
+        return false;
+      }
+
+      if (element.value === option.value) {
+        return true;
+      }
+
+      element.focus();
+      setNativeSelectValue(element, option.value);
+      dispatchEvents(element, ["input", "change", "blur"]);
+      highlightFilledElement(element);
+      return true;
+    },
+    () => {
+      const element = resolvePrimaryElement(group);
+      return element instanceof HTMLSelectElement
+        ? doesSelectMatchValue(element, resolvedValue)
+        : false;
+    },
+    {
+      noMatchMessage: "No compatible select option was found.",
+      verificationFailureMessage:
+        "The select control reset after autofill, even after retrying."
+    }
+  );
+}
+
+async function fillChoiceGroup(
+  group: CandidateGroup,
+  resolvedValue: ResolvedProfileValue
+): Promise<FillControlAttempt> {
+  return performVerifiedFill(
+    group,
+    () => {
+      const options = getChoiceElements(group);
+      const normalizedValues = normalizedNeedles(resolvedValue);
+
+      if (options.length === 0 || normalizedValues.length === 0) {
+        return false;
+      }
+
+      const matches = options.filter((element) =>
+        doesChoiceElementMatchNeedles(element, normalizedValues)
+      );
+
+      if (matches.length === 0) {
+        return false;
+      }
+
+      let changed = false;
+
+      matches.forEach((element, index) => {
+        if (element.type === "radio" && index > 0) {
+          return;
+        }
+
+        if (!element.checked) {
+          element.focus();
+          setNativeChecked(element, true);
+          dispatchEvents(element, ["input", "change", "blur"]);
+          highlightFilledElement(element);
+          changed = true;
+        }
+      });
+
+      return changed || matches.some((element) => element.checked);
+    },
+    () => doesChoiceGroupMatchValue(group, resolvedValue),
+    {
+      noMatchMessage: "A matching option was not found for this choice field.",
+      verificationFailureMessage:
+        "The selected choice did not persist after autofill, even after retrying."
+    }
+  );
+}
+
+async function fillCustomSelectionControl(
+  group: CandidateGroup,
+  resolvedValue: ResolvedProfileValue
+): Promise<FillControlAttempt> {
+  const targetValue = stringifyResolvedValue(resolvedValue);
+
+  return performVerifiedFill(
+    group,
+    () => {
+      const element = resolvePrimaryElement(group);
+
+      if (!element || !isCustomSelectionControl(element)) {
+        return false;
+      }
+
+      if (doesCustomSelectionMatchValue(element, resolvedValue)) {
+        return true;
+      }
+
+      const normalizedValues = normalizedNeedles(resolvedValue);
+
+      if (normalizedValues.length === 0) {
+        return false;
+      }
+
+      openCustomSelectionControl(element);
+
+      const option = findMatchingCustomOption(element, normalizedValues);
+
+      if (option) {
+        option.focus();
+        option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        option.click();
+        dispatchEvents(option, ["input", "change", "blur"]);
+        highlightFilledElement(element);
+        highlightFilledElement(option);
+        return true;
+      }
+
+      if (!targetValue || !isTextFillControl(element)) {
+        return false;
+      }
+
+      element.focus();
+      setTextControlValue(element, targetValue);
+      dispatchEvents(element, ["input", "change"]);
+      dispatchKeyboardEvent(element, "ArrowDown");
+      dispatchKeyboardEvent(element, "Enter");
+      dispatchEvents(element, ["blur"]);
+      highlightFilledElement(element);
+      return true;
+    },
+    () => {
+      const element = resolvePrimaryElement(group);
+      return element && isCustomSelectionControl(element)
+        ? doesCustomSelectionMatchValue(element, resolvedValue)
+        : false;
+    },
+    {
+      noMatchMessage: "A matching option was not found for this combobox or listbox.",
+      verificationFailureMessage:
+        "The combobox or listbox selection did not persist after autofill, even after retrying."
+    }
+  );
+}
+
+async function performVerifiedFill(
+  group: CandidateGroup,
+  apply: () => boolean,
+  verify: () => boolean,
+  messages: {
+    noMatchMessage: string;
+    verificationFailureMessage: string;
+  }
+): Promise<FillControlAttempt> {
+  if (verify()) {
+    return {
+      changed: false,
+      verified: true,
+      failureMessage: ""
+    };
+  }
+
+  let changed = false;
+
+  for (let attempt = 0; attempt < FILL_VERIFICATION_MAX_ATTEMPTS; attempt += 1) {
+    const applied = apply();
+    changed = changed || applied;
+
+    if (!applied && !verify()) {
+      return {
+        changed,
+        verified: false,
+        failureMessage: messages.noMatchMessage
+      };
+    }
+
+    const primaryElement = resolvePrimaryElement(group);
+
+    if (primaryElement) {
+      await waitForFieldSettle(primaryElement);
+    } else {
+      await waitForDomUpdate(FILL_SETTLE_DELAY_MS);
+    }
+
+    if (verify()) {
+      return {
+        changed,
+        verified: true,
+        failureMessage: ""
+      };
+    }
+  }
+
+  return {
+    changed,
+    verified: false,
+    failureMessage: changed
+      ? messages.verificationFailureMessage
+      : messages.noMatchMessage
+  };
+}
+
+function getChoiceElements(group: CandidateGroup): HTMLInputElement[] {
+  return resolveCurrentGroupElements(group).filter(
+    (element): element is HTMLInputElement =>
+      element instanceof HTMLInputElement &&
+      (element.type === "radio" || element.type === "checkbox")
+  );
+}
+
+function doesChoiceGroupMatchValue(
+  group: CandidateGroup,
+  resolvedValue: ResolvedProfileValue
+): boolean {
+  const normalizedValues = normalizedNeedles(resolvedValue);
+
+  if (normalizedValues.length === 0) {
+    return false;
+  }
+
+  return getChoiceElements(group).some(
+    (element) => element.checked && doesChoiceElementMatchNeedles(element, normalizedValues)
+  );
+}
+
+function doesChoiceElementMatchNeedles(
+  element: HTMLInputElement,
+  normalizedValues: string[]
+): boolean {
+  const label = cleanText(
+    element.labels?.[0]?.textContent || element.closest("label")?.textContent
+  );
+  const tokens = [label, element.value, element.getAttribute("aria-label") ?? ""]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return normalizedValues.some((needle) =>
+    tokens.some((token) => token === needle || token.includes(needle) || needle.includes(token))
+  );
+}
+
+function doesSelectMatchValue(
+  element: HTMLSelectElement,
+  resolvedValue: ResolvedProfileValue
+): boolean {
+  const current = cleanText(
+    element.selectedOptions[0]?.textContent || element.value
+  );
+  const target = normalizedNeedles(resolvedValue);
+  const normalizedCurrent = normalizeText(current);
+
+  return Boolean(normalizedCurrent) && target.some((needle) => normalizedCurrent === needle);
+}
+
+function doesTextControlMatchValue(
+  element: FormControl,
+  resolvedValue: ResolvedProfileValue
+): boolean {
+  if (!isTextFillControl(element)) {
+    return false;
+  }
+
+  const currentValue = cleanText(readTextControlValue(element));
   const targetValue = stringifyResolvedValue(resolvedValue);
 
   return Boolean(currentValue) && normalizeText(currentValue) === normalizeText(targetValue);
 }
 
-function fillTextControl(
-  element: HTMLInputElement | HTMLTextAreaElement,
+function doesCustomSelectionMatchValue(
+  element: HTMLElement,
   resolvedValue: ResolvedProfileValue
 ): boolean {
-  const targetValue = stringifyResolvedValue(resolvedValue);
-
-  if (!targetValue) {
-    return false;
-  }
-
-  if (normalizeText(element.value) === normalizeText(targetValue)) {
-    return false;
-  }
-
-  element.focus();
-  setNativeValue(element, targetValue);
-  dispatchEvents(element, ["input", "change", "blur"]);
-  highlightFilledElement(element);
-  return true;
-}
-
-function fillSelectControl(
-  element: HTMLSelectElement,
-  resolvedValue: ResolvedProfileValue
-): boolean {
-  const option = findMatchingOption(element.options, normalizedNeedles(resolvedValue));
-
-  if (!option) {
-    return false;
-  }
-
-  if (element.value === option.value) {
-    return false;
-  }
-
-  element.focus();
-  setNativeSelectValue(element, option.value);
-  dispatchEvents(element, ["input", "change", "blur"]);
-  highlightFilledElement(element);
-  return true;
-}
-
-function fillChoiceGroup(
-  group: CandidateGroup,
-  resolvedValue: ResolvedProfileValue
-): boolean {
-  const options = group.elements.filter(
-    (element): element is HTMLInputElement => element instanceof HTMLInputElement
-  );
   const normalizedValues = normalizedNeedles(resolvedValue);
 
-  if (options.length === 0 || normalizedValues.length === 0) {
+  if (normalizedValues.length === 0) {
     return false;
   }
 
-  const matches = options.filter((element) => {
-    const label = cleanText(
-      element.labels?.[0]?.textContent || element.closest("label")?.textContent
-    );
-    const tokens = [label, element.value, element.getAttribute("aria-label") ?? ""]
-      .map(normalizeText)
-      .filter(Boolean);
+  const selectedOptionText = getAssociatedOptionElements(element)
+    .filter((option) =>
+      option.getAttribute("aria-selected") === "true" ||
+      option.getAttribute("aria-checked") === "true" ||
+      option.getAttribute("data-selected") === "true"
+    )
+    .map((option) => cleanText(option.textContent || option.getAttribute("aria-label")));
+  const activeDescendantText = cleanText(
+    resolveAriaReferenceElement(element, "aria-activedescendant")?.textContent
+  );
+  const currentTokens = [
+    element.getAttribute("aria-valuetext"),
+    element.getAttribute("data-value"),
+    activeDescendantText,
+    ...selectedOptionText,
+    readTextControlValue(element)
+  ]
+    .map((value) => normalizeText(value ?? ""))
+    .filter(Boolean);
 
-    return normalizedValues.some((needle) =>
-      tokens.some((token) => token === needle || token.includes(needle))
-    );
-  });
+  return normalizedValues.some((needle) =>
+    currentTokens.some((token) => token === needle || token.includes(needle))
+  );
+}
 
-  if (matches.length === 0) {
-    return false;
+function setTextControlValue(
+  element: FormControl,
+  value: string
+): void {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    setNativeValue(element, value);
+    return;
   }
 
-  let changed = false;
+  if (element.isContentEditable) {
+    element.textContent = value;
+    return;
+  }
 
-  matches.forEach((element, index) => {
-    if (element.type === "radio" && index > 0) {
-      return;
-    }
+  element.textContent = value;
+  element.setAttribute("data-value", value);
+}
 
-    if (!element.checked) {
-      element.focus();
-      setNativeChecked(element, true);
-      dispatchEvents(element, ["input", "change", "blur"]);
-      highlightFilledElement(element);
-      changed = true;
-    }
-  });
+function readTextControlValue(element: FormControl): string {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    return element.value;
+  }
 
-  return changed;
+  return cleanText(
+    element.getAttribute("aria-valuetext") ||
+      element.getAttribute("data-value") ||
+      element.textContent
+  );
+}
+
+function openCustomSelectionControl(element: HTMLElement): void {
+  element.focus();
+  element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  element.click();
+  dispatchKeyboardEvent(element, "ArrowDown");
+}
+
+function findMatchingCustomOption(
+  element: HTMLElement,
+  normalizedValues: string[]
+): HTMLElement | null {
+  return (
+    getAssociatedOptionElements(element).find((option) => {
+      const tokens = [
+        option.textContent,
+        option.getAttribute("aria-label"),
+        option.getAttribute("data-value")
+      ]
+        .map((value) => normalizeText(cleanText(value)))
+        .filter(Boolean);
+
+      return normalizedValues.some((needle) =>
+        tokens.some((token) => token === needle || token.includes(needle) || needle.includes(token))
+      );
+    }) ?? null
+  );
 }
 
 function fillFileInputControl(
@@ -1392,6 +1750,22 @@ function setNativeChecked(element: HTMLInputElement, checked: boolean): void {
 
 function dispatchEvents(element: HTMLElement, eventNames: string[]): void {
   eventNames.forEach((eventName) => {
+    if (eventName === "input" && typeof InputEvent !== "undefined") {
+      element.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: null,
+          inputType: "insertText"
+        })
+      );
+      return;
+    }
+
+    if (eventName === "blur" && typeof FocusEvent !== "undefined") {
+      element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+      return;
+    }
+
     element.dispatchEvent(new Event(eventName, { bubbles: true }));
   });
 }
@@ -1424,17 +1798,26 @@ function highlightFilledElement(element: HTMLElement): void {
 }
 
 function getPageFields(): FormControl[] {
-  return Array.from(
-    document.querySelectorAll<FormControl>("input, textarea, select")
+  const fields = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      [
+        "input",
+        "textarea",
+        "select",
+        "[role='textbox']",
+        "[role='combobox']",
+        "[role='listbox']",
+        "[contenteditable='true']",
+        "[contenteditable='plaintext-only']"
+      ].join(", ")
+    )
   );
+
+  return dedupeElements(fields.filter(isFormControlElement));
 }
 
 function isChoiceGroup(group: CandidateGroup): boolean {
-  return group.elements.some(
-    (element) =>
-      element instanceof HTMLInputElement &&
-      (element.type === "radio" || element.type === "checkbox")
-  );
+  return getChoiceElements(group).length > 0;
 }
 
 function isFileInput(element: FormControl): element is HTMLInputElement {
@@ -1442,8 +1825,12 @@ function isFileInput(element: FormControl): element is HTMLInputElement {
 }
 
 function isScannableFieldElement(field: FormControl): boolean {
+  if (isDisabledField(field)) {
+    return false;
+  }
+
   if (isFileInput(field)) {
-    return !field.disabled;
+    return true;
   }
 
   if (!isVisibleField(field)) {
@@ -1466,6 +1853,10 @@ function isVisibleField(field: FormControl): boolean {
     return false;
   }
 
+  if (field.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+
   const style = window.getComputedStyle(field);
   const rect = field.getBoundingClientRect();
   const hiddenByContainer = Boolean(
@@ -1484,7 +1875,7 @@ function isVisibleField(field: FormControl): boolean {
     return true;
   }
 
-  return !field.disabled;
+  return !isDisabledField(field);
 }
 
 function isTextLikeCandidate(candidate: FieldScanCandidate): boolean {
@@ -1501,7 +1892,9 @@ function isTextLikeCandidate(candidate: FieldScanCandidate): boolean {
     "radio",
     "file",
     "range",
-    "color"
+    "color",
+    "combobox",
+    "listbox"
   ]);
 
   return !ignoredTypes.has(candidate.inputType);
@@ -1532,7 +1925,10 @@ function getGroupingKey(
 
 function buildFieldId(field: FormControl, index: number): string {
   const stableId =
-    field.id || field.getAttribute("name") || field.getAttribute("data-qa");
+    field.id ||
+    field.getAttribute("name") ||
+    field.getAttribute("data-qa") ||
+    field.getAttribute("data-testid");
 
   return stableId?.trim()
     ? `${field.tagName.toLowerCase()}:${stableId.trim()}`
@@ -1550,14 +1946,29 @@ function buildSelectorHint(field: FormControl, index: number): string {
     return `${field.tagName.toLowerCase()}[name="${name}"]`;
   }
 
+  const dataQa = field.getAttribute("data-qa")?.trim();
+
+  if (dataQa) {
+    return `${field.tagName.toLowerCase()}[data-qa="${dataQa}"]`;
+  }
+
+  const role = field.getAttribute("role")?.trim();
+
+  if (role) {
+    return `${field.tagName.toLowerCase()}[role="${role}"]`;
+  }
+
   return `${field.tagName.toLowerCase()}:index(${index})`;
 }
 
 function extractFieldLabel(field: FormControl): string {
   const candidates = [
-    field.labels?.[0]?.textContent,
+    resolveAriaReferenceText(field, "aria-labelledby"),
+    field.id ? document.querySelector(`label[for="${field.id}"]`)?.textContent : "",
+    getElementLabelText(field),
     field.closest("label")?.textContent,
     field.getAttribute("aria-label"),
+    field.getAttribute("title"),
     field.getAttribute("placeholder"),
     field.getAttribute("name"),
     field.getAttribute("id")
@@ -1566,6 +1977,18 @@ function extractFieldLabel(field: FormControl): string {
   const label = candidates.map(cleanText).find((value) => Boolean(value));
 
   return label ?? "";
+}
+
+function getElementLabelText(field: FormControl): string {
+  if (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    field instanceof HTMLSelectElement
+  ) {
+    return cleanText(field.labels?.[0]?.textContent);
+  }
+
+  return "";
 }
 
 function extractSectionHeading(field: FormControl): string {
@@ -1617,6 +2040,13 @@ function extractOptionLabels(field: FormControl): string[] {
       .slice(0, 8);
   }
 
+  if (isCustomSelectionControl(field)) {
+    return getAssociatedOptionElements(field)
+      .map((option) => cleanText(option.textContent || option.getAttribute("aria-label")))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
   if (
     field instanceof HTMLInputElement &&
     (field.type === "radio" || field.type === "checkbox") &&
@@ -1639,6 +2069,286 @@ function extractOptionLabels(field: FormControl): string[] {
   }
 
   return [];
+}
+
+function getFieldElementTag(field: FormControl): FieldElementTag {
+  if (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    field instanceof HTMLSelectElement
+  ) {
+    return field.tagName.toLowerCase() as FieldElementTag;
+  }
+
+  return "custom";
+}
+
+function detectFieldInputType(field: FormControl): string {
+  if (field instanceof HTMLInputElement) {
+    return field.type.toLowerCase() || "text";
+  }
+
+  if (field instanceof HTMLTextAreaElement) {
+    return "textarea";
+  }
+
+  if (field instanceof HTMLSelectElement) {
+    return "select";
+  }
+
+  const role = getNormalizedRole(field);
+
+  if (role) {
+    return role;
+  }
+
+  if (field.isContentEditable) {
+    return "contenteditable";
+  }
+
+  return "custom";
+}
+
+function getFieldPlaceholder(field: FormControl): string {
+  return (
+    field.getAttribute("placeholder")?.trim() ??
+    field.getAttribute("data-placeholder")?.trim() ??
+    ""
+  );
+}
+
+function isRequiredField(field: FormControl): boolean {
+  if (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    field instanceof HTMLSelectElement
+  ) {
+    return field.required || field.getAttribute("aria-required")?.trim() === "true";
+  }
+
+  return field.getAttribute("aria-required")?.trim() === "true";
+}
+
+function isFormControlElement(field: HTMLElement): field is FormControl {
+  return (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    field instanceof HTMLSelectElement ||
+    isCustomFieldElement(field)
+  );
+}
+
+function isCustomFieldElement(field: HTMLElement): field is CustomFormControl {
+  const role = getNormalizedRole(field);
+
+  return (
+    field.isContentEditable ||
+    role === "textbox" ||
+    role === "combobox" ||
+    role === "listbox"
+  );
+}
+
+function isTextFillControl(field: FormControl): boolean {
+  return (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    isCustomTextControl(field)
+  );
+}
+
+function isCustomTextControl(field: FormControl): field is CustomFormControl {
+  return (
+    field instanceof HTMLElement &&
+    !(field instanceof HTMLInputElement) &&
+    !(field instanceof HTMLTextAreaElement) &&
+    !(field instanceof HTMLSelectElement) &&
+    (field.isContentEditable || getNormalizedRole(field) === "textbox")
+  );
+}
+
+function isCustomSelectionControl(field: FormControl): field is CustomFormControl {
+  return (
+    field instanceof HTMLElement &&
+    !(field instanceof HTMLInputElement) &&
+    !(field instanceof HTMLTextAreaElement) &&
+    !(field instanceof HTMLSelectElement) &&
+    (getNormalizedRole(field) === "combobox" || getNormalizedRole(field) === "listbox")
+  );
+}
+
+function isDisabledField(field: FormControl): boolean {
+  if (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLTextAreaElement ||
+    field instanceof HTMLSelectElement
+  ) {
+    return field.disabled || field.getAttribute("aria-disabled") === "true";
+  }
+
+  return field.getAttribute("aria-disabled") === "true";
+}
+
+function getNormalizedRole(field: HTMLElement): string {
+  return field.getAttribute("role")?.trim().toLowerCase() ?? "";
+}
+
+function resolveCurrentGroupElements(group: CandidateGroup): FormControl[] {
+  const resolved = [
+    ...queryElementsFromSelectorHint(group.candidate.selectorHint),
+    ...queryElementsById(group.candidate.elementId),
+    ...queryElementsByName(group.candidate.name),
+    ...group.elements.filter((element) => element.isConnected)
+  ];
+
+  return dedupeElements(resolved.filter(isFormControlElement));
+}
+
+function resolvePrimaryElement(group: CandidateGroup): FormControl | null {
+  return resolveCurrentGroupElements(group)[0] ?? null;
+}
+
+function queryElementsFromSelectorHint(selectorHint: string): HTMLElement[] {
+  if (!selectorHint || selectorHint.includes(":index(")) {
+    return [];
+  }
+
+  try {
+    return Array.from(document.querySelectorAll<HTMLElement>(selectorHint));
+  } catch {
+    return [];
+  }
+}
+
+function queryElementsById(elementId: string): HTMLElement[] {
+  if (!elementId) {
+    return [];
+  }
+
+  const element = document.getElementById(elementId);
+  return element ? [element] : [];
+}
+
+function queryElementsByName(name: string): HTMLElement[] {
+  if (!name) {
+    return [];
+  }
+
+  return Array.from(document.querySelectorAll<HTMLElement>(`[name="${name}"]`));
+}
+
+function waitForFieldSettle(field: HTMLElement, delayMs = FILL_SETTLE_DELAY_MS): Promise<void> {
+  const root =
+    field.closest("form, fieldset, section, article, [role='group']") ??
+    document.body;
+
+  return new Promise((resolve) => {
+    let timeoutId = window.setTimeout(finish, delayMs);
+    const observer = new MutationObserver(() => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(finish, delayMs);
+    });
+
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+
+    function finish() {
+      observer.disconnect();
+      window.clearTimeout(timeoutId);
+      resolve();
+    }
+  });
+}
+
+function getAssociatedOptionElements(field: HTMLElement): HTMLElement[] {
+  const containers: HTMLElement[] = [];
+  const associatedByReference = [
+    ...resolveAriaReferenceElements(field, "aria-controls"),
+    ...resolveAriaReferenceElements(field, "aria-owns")
+  ].filter((element): element is HTMLElement => element instanceof HTMLElement);
+
+  if (getNormalizedRole(field) === "listbox") {
+    containers.push(field);
+  }
+
+  const nearbyListbox = field.closest(
+    "[role='combobox'], [role='listbox'], fieldset, section, article, form, div"
+  )?.querySelector<HTMLElement>("[role='listbox']");
+
+  if (nearbyListbox) {
+    containers.push(nearbyListbox);
+  }
+
+  containers.push(...associatedByReference);
+
+  return dedupeElements(
+    containers
+      .flatMap((container) =>
+        Array.from(
+          container.querySelectorAll<HTMLElement>("[role='option'], [role='radio']")
+        )
+      )
+      .filter((option) => option.isConnected && !option.closest("[hidden], [aria-hidden='true']"))
+  );
+}
+
+function resolveAriaReferenceText(
+  field: HTMLElement,
+  attributeName: string
+): string {
+  return cleanText(
+    resolveAriaReferenceElements(field, attributeName)
+      .map((element) => element.textContent ?? "")
+      .join(" ")
+  );
+}
+
+function resolveAriaReferenceElement(
+  field: HTMLElement,
+  attributeName: string
+): HTMLElement | null {
+  return resolveAriaReferenceElements(field, attributeName)[0] ?? null;
+}
+
+function resolveAriaReferenceElements(
+  field: HTMLElement,
+  attributeName: string
+): HTMLElement[] {
+  const ids = field.getAttribute(attributeName)?.trim();
+
+  if (!ids) {
+    return [];
+  }
+
+  return ids
+    .split(/\s+/)
+    .map((id) => document.getElementById(id))
+    .filter((element): element is HTMLElement => element instanceof HTMLElement);
+}
+
+function dispatchKeyboardEvent(element: HTMLElement, key: string): void {
+  element.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key,
+      code: key,
+      bubbles: true
+    })
+  );
+  element.dispatchEvent(
+    new KeyboardEvent("keyup", {
+      key,
+      code: key,
+      bubbles: true
+    })
+  );
+}
+
+function dedupeElements<T extends Element>(elements: T[]): T[] {
+  return elements.filter((element, index) => elements.indexOf(element) === index);
 }
 
 function cleanText(value: string | null | undefined): string {

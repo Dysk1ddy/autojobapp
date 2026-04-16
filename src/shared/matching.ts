@@ -564,6 +564,14 @@ function evaluateDefinition(
     score += 4;
     pushUnique(signals, `tag:${candidate.elementTag}`);
   }
+  else {
+    const customTagBoost = getCustomTagPreferenceBoost(candidate, definition);
+
+    if (customTagBoost > 0) {
+      score += customTagBoost;
+      pushUnique(signals, `custom-tag:${candidate.inputType}`);
+    }
+  }
 
   if (definition.preferredInputTypes?.includes(candidate.inputType)) {
     score += 5;
@@ -658,6 +666,31 @@ function scoreSource(
       pushUnique(signals, `${sourceLabel}:${phrase}`);
       return weight;
     }
+  }
+
+  return 0;
+}
+
+function getCustomTagPreferenceBoost(
+  candidate: FieldScanCandidate,
+  definition: FieldDefinition
+): number {
+  if (candidate.elementTag !== "custom" || !definition.preferredTags?.length) {
+    return 0;
+  }
+
+  if (
+    (candidate.inputType === "textbox" || candidate.inputType === "contenteditable") &&
+    (definition.preferredTags.includes("textarea") || definition.preferredTags.includes("input"))
+  ) {
+    return definition.preferredTags.includes("textarea") ? 6 : 4;
+  }
+
+  if (
+    (candidate.inputType === "combobox" || candidate.inputType === "listbox") &&
+    (definition.preferredTags.includes("select") || definition.preferredTags.includes("input"))
+  ) {
+    return definition.preferredTags.includes("select") ? 6 : 4;
   }
 
   return 0;

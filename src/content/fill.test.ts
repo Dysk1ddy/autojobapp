@@ -326,6 +326,128 @@ describe("fillPage", () => {
     expect(result.fill.results[0]?.fillSource).toBe("ai");
   });
 
+  it("fills a contenteditable textbox using a template-backed answer", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="motivation-label">Why are you interested in this role?</label>
+        <div
+          id="motivation-answer"
+          role="textbox"
+          contenteditable="true"
+          aria-labelledby="motivation-label"
+        ></div>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const motivationTemplate = profile.templates.find(
+      (template) => template.category === "motivation"
+    );
+
+    if (motivationTemplate) {
+      motivationTemplate.answer =
+        "I enjoy improving hiring workflows, and this role is a strong match for that work.";
+    }
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/contenteditable",
+      title: "Contenteditable Motivation"
+    });
+
+    expect(
+      (document.getElementById("motivation-answer") as HTMLDivElement).textContent
+    ).toContain("improving hiring workflows");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills a custom ARIA combobox by selecting a matching option", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="country-label">Country of residence</label>
+        <div
+          id="country-combobox"
+          role="combobox"
+          tabindex="0"
+          aria-labelledby="country-label"
+          aria-controls="country-options"
+        ></div>
+        <div id="country-options" role="listbox" hidden>
+          <div id="country-option-us" role="option">United States</div>
+          <div id="country-option-ca" role="option">Canada</div>
+        </div>
+      </form>
+    `;
+
+    const combobox = document.getElementById("country-combobox") as HTMLDivElement;
+    const listbox = document.getElementById("country-options") as HTMLDivElement;
+    const options = Array.from(
+      listbox.querySelectorAll<HTMLElement>('[role="option"]')
+    );
+
+    const openListbox = () => {
+      listbox.hidden = false;
+    };
+
+    combobox.addEventListener("click", openListbox);
+    combobox.addEventListener("keydown", openListbox);
+    options.forEach((option) => {
+      option.addEventListener("click", () => {
+        options.forEach((candidate) => {
+          candidate.setAttribute("aria-selected", candidate === option ? "true" : "false");
+        });
+        combobox.textContent = option.textContent;
+        combobox.setAttribute("data-value", option.textContent ?? "");
+        combobox.setAttribute("aria-activedescendant", option.id);
+        listbox.hidden = true;
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.contact.country = "United States";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/custom-combobox",
+      title: "Custom Combobox"
+    });
+
+    expect(combobox.textContent).toContain("United States");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("retries a text fill when the page clears the first attempt", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Email
+          <input type="email" name="email" />
+        </label>
+      </form>
+    `;
+
+    const emailField = document.querySelector('input[name="email"]') as HTMLInputElement;
+    let clearCount = 0;
+
+    emailField.addEventListener("input", () => {
+      if (clearCount > 0) {
+        return;
+      }
+
+      clearCount += 1;
+      window.setTimeout(() => {
+        emailField.value = "";
+      }, 20);
+    });
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/retry-email",
+      title: "Retry Email"
+    });
+
+    expect(emailField.value).toBe(profile.contact.email);
+    expect(result.fill.results[0]?.action).toBe("filled");
+  });
+
   it("uploads a saved resume file into a detected resume file input", async () => {
     document.body.innerHTML = `
       <form>
