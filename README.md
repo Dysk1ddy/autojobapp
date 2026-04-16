@@ -19,10 +19,11 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 13. Add AI-assisted autofill with an OpenAI API key setting.
 14. Add a fully auto AI override that can bypass the default AI review safeguard.
 15. Add broader AI control settings for scope, priority, and custom instructions.
+16. Add a keyboard shortcut for autofill and auto-upload for saved resumes.
 
-This repo is currently on Step 15.
+This repo is currently on Step 16.
 
-## What Step 15 includes
+## What Step 16 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -61,6 +62,8 @@ This repo is currently on Step 15.
 - AI scope controls so you can keep AI focused, expand it across text-style blanks, or make it aggressive across most supported non-sensitive fields
 - AI priority controls so you can keep saved profile values first or let AI suggestions win when both exist
 - Custom AI instructions for tone, style, and answer behavior
+- A Chrome extension shortcut for triggering autofill on the active job application page
+- Saved resume uploads that can now be attached to detected resume file inputs during autofill
 - Vitest plus jsdom test harness
 - HTML fixtures for generic, Greenhouse, Lever, and Workday application pages
 - Resume import fixture coverage
@@ -70,7 +73,7 @@ This repo is currently on Step 15.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 15 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, live job-site file inputs still do not accept scripted uploads, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority.
+Step 16 is configurable where it matters. Conservative mode only autofills `high` confidence matches, Neutral adds `medium`, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, and saved resumes can be uploaded automatically when a page exposes a resume-style file input.
 
 ## Project structure
 
@@ -212,6 +215,7 @@ Responsible for:
 - editing the active applicant profile through a draft form
 - editing extension-level fill mode, auto-submit, fully auto, AI scope, and AI priority settings
 - editing the AI-assist toggle, locally stored OpenAI API key, and custom AI instructions
+- linking a saved resume with uploadable file data
 - linking a saved resume file to the active profile
 - importing and exporting applicant profile JSON backups
 - showing readiness metrics for the saved profile
@@ -241,6 +245,8 @@ It currently contains:
 - `settings.openAiApiKey`: the locally stored OpenAI API key used for optional AI assistance
 - `settings.aiAssistModel`: the OpenAI model alias used for optional AI assistance
 - `settings.aiCustomInstructions`: optional extra guidance appended to the AI system prompt
+- `profiles[].documents.resume.dataBase64`: locally stored file bytes used for saved resume uploads
+- `profiles[].documents.resume.sizeBytes`: saved resume file size for debugging and upload reconstruction
 - `lastScan`: latest scan summary from the popup
 - `lastResumeImport`: latest local resume-import summary from the options page
 - `lastResumeImport.sourceKind`: whether the last import came from pasted text or a local file
@@ -357,6 +363,7 @@ npm.cmd run test:e2e
 - Final submit clicks only happen when the user explicitly enables auto-submit
 - AI-assisted fills require manual review before submit unless the fully auto override is explicitly enabled
 - AI scope and AI priority stay conservative by default
+- Saved resume uploads stay local to extension storage and are only attached when the user triggers autofill
 - High-confidence autofill happens only when the user explicitly triggers it
 - All state stays in local extension storage
 
@@ -464,6 +471,13 @@ npm.cmd run test:e2e
 - AI scope defaults to focused and can be widened to expanded or aggressive
 - Saved profile values remain first priority by default, but AI can be configured to take priority when both exist
 - Optional custom AI instructions are stored in settings and included in AI requests
+
+## Step 16 acceptance criteria
+
+- Pressing the configured Chrome shortcut can trigger the same active-tab autofill flow as the popup
+- Linking a resume file stores uploadable file data locally with the active profile
+- Autofill can attach the saved resume to detected resume upload inputs when the page exposes a standard file control
+- Existing text/select/AI autofill behavior continues to pass unit, build, and browser verification
 
 ## Next step
 

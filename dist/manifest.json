@@ -13,5 +13,14 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "commands": {
+    "autofill-active-tab": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Autofill the active job application page"
+    }
+  },
   "options_page": "options.html"
 }

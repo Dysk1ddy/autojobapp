@@ -6,6 +6,7 @@ describe("fillPage", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.head.innerHTML = "<title>Fixture</title>";
+    installDataTransferPolyfill();
   });
 
   it("fills repeated experience fields with sequential profile entries", async () => {
@@ -324,7 +325,77 @@ describe("fillPage", () => {
     ).toBe("ai-generated@example.com");
     expect(result.fill.results[0]?.fillSource).toBe("ai");
   });
+
+  it("uploads a saved resume file into a detected resume file input", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Upload resume
+          <input type="file" name="resume" style="display: none;" />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.documents.resume = {
+      id: "resume-1",
+      name: "Resume PDF",
+      fileName: "resume.pdf",
+      mimeType: "application/pdf",
+      source: "local",
+      sizeBytes: 12,
+      dataBase64: "cmVzdW1lIGRhdGE=",
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/resume-upload",
+      title: "Resume Upload"
+    });
+
+    const resumeInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    expect(resumeInput.files?.length).toBe(1);
+    expect(resumeInput.files?.[0]?.name).toBe("resume.pdf");
+    expect(result.fill.results[0]?.action).toBe("filled");
+    expect(result.fill.results[0]?.fillSource).toBe("profile");
+  });
 });
+
+function installDataTransferPolyfill() {
+  if (typeof DataTransfer !== "undefined") {
+    return;
+  }
+
+  class FakeDataTransfer {
+    private readonly filesStore: File[] = [];
+
+    readonly items = {
+      add: (file: File) => {
+        this.filesStore.push(file);
+      }
+    };
+
+    get files(): FileList {
+      const fileList = {
+        length: this.filesStore.length,
+        item: (index: number) => this.filesStore[index] ?? null
+      } as Record<number | "length" | "item", File | number | ((index: number) => File | null)>;
+
+      this.filesStore.forEach((file, index) => {
+        fileList[index] = file;
+      });
+
+      return fileList as unknown as FileList;
+    }
+  }
+
+  Object.defineProperty(globalThis, "DataTransfer", {
+    configurable: true,
+    writable: true,
+    value: FakeDataTransfer
+  });
+}
 
 function createProfileWithRepeatedExperience() {
   const profile = createDefaultApplicantProfile();

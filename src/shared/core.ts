@@ -281,6 +281,8 @@ export interface DocumentReference {
   fileName: string;
   mimeType: string;
   source: "local" | "imported" | "generated";
+  sizeBytes: number;
+  dataBase64: string;
   lastUpdatedAt: string;
 }
 
@@ -392,7 +394,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -1317,6 +1319,8 @@ function normalizeDocumentReference(raw: unknown): DocumentReference | null {
     fileName: readString(record.fileName),
     mimeType: readString(record.mimeType),
     source: normalizeDocumentSource(record.source),
+    sizeBytes: readNumber(record.sizeBytes, 0),
+    dataBase64: readString(record.dataBase64),
     lastUpdatedAt: readString(record.lastUpdatedAt, createTimestamp())
   };
 }

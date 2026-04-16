@@ -34,7 +34,8 @@ const roadmap = [
   "Step 12: profile backup import and export",
   "Step 13: AI-assisted autofill",
   "Step 14: fully auto AI override",
-  "Step 15: expanded AI controls"
+  "Step 15: expanded AI controls",
+  "Step 16: keyboard shortcut and resume upload"
 ];
 
 function PopupApp() {
@@ -383,9 +384,9 @@ function PopupApp() {
           <span className="eyebrow">AutoJobApp</span>
           <h1>Preview first. Fill second.</h1>
           <p>
-            Step 15 adds more direct AI control so you can choose how widely the
-            model participates and whether saved profile values or AI suggestions
-            should win when both are available.
+            Step 16 adds a keyboard shortcut for autofill and lets the saved
+            resume attach itself to detected resume upload fields while keeping
+            the newer AI controls in place.
           </p>
         </div>
         <div className="badge-row">
@@ -463,6 +464,11 @@ function PopupApp() {
             Open options
           </button>
         </div>
+        <p className="helper-line">
+          Shortcut: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> to run
+          autofill on the active tab. You can customize it in
+          <code>chrome://extensions/shortcuts</code>.
+        </p>
       </section>
 
       <section className="surface">
@@ -901,11 +907,11 @@ function PopupApp() {
       <section className="surface">
         <div className="section-head">
           <h2>Roadmap</h2>
-          <span className="inline-note">Current milestone: Step 15</span>
+          <span className="inline-note">Current milestone: Step 16</span>
         </div>
         <ul className="roadmap-list">
           {roadmap.map((item, index) => (
-            <li key={item} className={index <= 14 ? "roadmap-active" : ""}>
+            <li key={item} className={index <= 15 ? "roadmap-active" : ""}>
               {item}
             </li>
           ))}

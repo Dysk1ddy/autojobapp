@@ -655,6 +655,10 @@ function fillMatchedGroup(
     );
   }
 
+  if (group.elements.some(isFileInput)) {
+    return fillFileUploadGroup(match, group, profile);
+  }
+
   const profileSuggestionAllowed = shouldFillConfidence(
     match.confidence,
     settings.fillMode
@@ -732,20 +736,6 @@ function fillMatchedGroup(
       "skipped",
       aiSuggestion?.valuePreview || "",
       "AI assist did not return a usable value for this field."
-    );
-  }
-
-  if (group.elements.some(isFileInput)) {
-    return buildResult(
-      match,
-      "unsupported",
-      fillTarget.resolvedValue.preview,
-      "Browser security prevents automatic file uploads for resume and cover letter inputs.",
-      {
-        matchedKey: fillTarget.matchedKey,
-        confidence: fillTarget.confidence,
-        fillSource: fillTarget.source
-      }
     );
   }
 
@@ -850,6 +840,92 @@ function fillMatchedGroup(
         matchedKey: fillTarget.matchedKey,
         confidence: fillTarget.confidence,
         fillSource: fillTarget.source
+      }
+    );
+  }
+}
+
+function fillFileUploadGroup(
+  match: DetectedFieldMatch,
+  group: CandidateGroup,
+  profile: ApplicantProfile
+): FilledFieldResult {
+  const primaryElement = group.elements.find(isFileInput);
+
+  if (!primaryElement) {
+    return buildResult(
+      match,
+      "error",
+      "",
+      "A file upload field was detected, but no file input element was available."
+    );
+  }
+
+  if (!looksLikeResumeUpload(group.candidate)) {
+    return buildResult(
+      match,
+      "skipped",
+      "",
+      "Detected a file input, but it did not look like a resume upload field."
+    );
+  }
+
+  if ((primaryElement.files?.length ?? 0) > 0) {
+    return buildResult(
+      match,
+      "skipped",
+      fileNamesPreview(primaryElement.files),
+      "Skipped to avoid overwriting an existing uploaded file."
+    );
+  }
+
+  const resumeDocument = profile.documents.resume;
+
+  if (!resumeDocument) {
+    return buildResult(
+      match,
+      "skipped",
+      "",
+      "No saved resume is linked to the active profile."
+    );
+  }
+
+  if (!resumeDocument.dataBase64) {
+    return buildResult(
+      match,
+      "unsupported",
+      resumeDocument.fileName || resumeDocument.name,
+      "A saved resume is linked, but no uploadable file data is stored yet. Re-link the resume file in options."
+    );
+  }
+
+  try {
+    const resumeFile = createStoredDocumentFile(resumeDocument);
+    const changed = fillFileInputControl(primaryElement, [resumeFile]);
+
+    return buildResult(
+      match,
+      changed ? "filled" : "error",
+      resumeDocument.fileName || resumeDocument.name,
+      changed
+        ? "Uploaded the saved resume file."
+        : "The saved resume file could not be attached to this upload control.",
+      {
+        matchedKey: "documents.resume" as ProfileFieldKey,
+        confidence: "high",
+        fillSource: "profile"
+      }
+    );
+  } catch (error) {
+    return buildResult(
+      match,
+      "error",
+      resumeDocument.fileName || resumeDocument.name,
+      error instanceof Error ? error.message : String(error),
+      {
+        matchedKey: "documents.resume" as ProfileFieldKey,
+        confidence: "high",
+        fillSource: "profile"
       }
     );
   }
@@ -1102,6 +1178,119 @@ function fillChoiceGroup(
   return changed;
 }
 
+function fillFileInputControl(
+  element: HTMLInputElement,
+  files: File[]
+): boolean {
+  const nextFiles = createSyntheticFileList(files);
+
+  if (!nextFiles || files.length === 0) {
+    return false;
+  }
+
+  element.focus();
+
+  try {
+    element.files = nextFiles;
+  } catch {
+    try {
+      Object.defineProperty(element, "files", {
+        configurable: true,
+        writable: true,
+        value: nextFiles
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  dispatchEvents(element, ["input", "change", "blur"]);
+  highlightFilledElement(element);
+  return (element.files?.length ?? 0) > 0;
+}
+
+function createSyntheticFileList(files: File[]): FileList | null {
+  if (typeof DataTransfer !== "undefined") {
+    const transfer = new DataTransfer();
+
+    files.forEach((file) => transfer.items.add(file));
+    return transfer.files;
+  }
+
+  if (files.length === 0) {
+    return null;
+  }
+
+  const fileList = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null
+  } as Record<number | "length" | "item", File | number | ((index: number) => File | null)>;
+
+  files.forEach((file, index) => {
+    fileList[index] = file;
+  });
+
+  return fileList as unknown as FileList;
+}
+
+function createStoredDocumentFile(
+  documentReference: NonNullable<ApplicantProfile["documents"]["resume"]>
+): File {
+  if (!documentReference.dataBase64) {
+    throw new Error("No stored file data was available for the saved resume.");
+  }
+
+  const binary = atob(documentReference.dataBase64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new File([bytes], documentReference.fileName || documentReference.name, {
+    type: documentReference.mimeType || "application/octet-stream",
+    lastModified: Date.parse(documentReference.lastUpdatedAt) || Date.now()
+  });
+}
+
+function looksLikeResumeUpload(candidate: FieldScanCandidate): boolean {
+  const searchable = normalizeText(
+    [
+      candidate.label,
+      candidate.name,
+      candidate.elementId,
+      candidate.placeholder,
+      candidate.ariaLabel,
+      candidate.sectionHeading,
+      candidate.nearbyText,
+      candidate.selectorHint
+    ].join(" ")
+  );
+
+  if (!searchable) {
+    return false;
+  }
+
+  const hasResumeSignal =
+    searchable.includes("resume") ||
+    searchable.includes("curriculum vitae") ||
+    /\bcv\b/.test(searchable);
+  const hasCoverLetterSignal = searchable.includes("cover letter");
+
+  return hasResumeSignal && !hasCoverLetterSignal;
+}
+
+function fileNamesPreview(files: FileList | null): string {
+  if (!files || files.length === 0) {
+    return "";
+  }
+
+  return Array.from(files)
+    .map((file) => file.name)
+    .filter(Boolean)
+    .join(", ");
+}
+
 function findMatchingOption(
   options: HTMLOptionsCollection,
   normalizedValues: string[]
@@ -1248,16 +1437,20 @@ function isChoiceGroup(group: CandidateGroup): boolean {
   );
 }
 
-function isFileInput(element: FormControl): boolean {
+function isFileInput(element: FormControl): element is HTMLInputElement {
   return element instanceof HTMLInputElement && element.type === "file";
 }
 
 function isScannableFieldElement(field: FormControl): boolean {
+  if (isFileInput(field)) {
+    return !field.disabled;
+  }
+
   if (!isVisibleField(field)) {
     return false;
   }
 
-  if (!(field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) {
+  if (field instanceof HTMLInputElement) {
     const ignoredTypes = new Set(["hidden", "submit", "button", "reset"]);
 
     if (ignoredTypes.has(field.type)) {

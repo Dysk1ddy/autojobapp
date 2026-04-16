@@ -27,6 +27,16 @@ chrome.runtime.onStartup.addListener(() => {
   void ensureState();
 });
 
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== "autofill-active-tab") {
+    return;
+  }
+
+  void fillActiveTab().catch((error) => {
+    console.error("AutoJobApp shortcut autofill failed:", error);
+  });
+});
+
 chrome.runtime.onMessage.addListener(
   (request: RuntimeRequest, _sender, sendResponse) => {
     void handleRuntimeMessage(request)

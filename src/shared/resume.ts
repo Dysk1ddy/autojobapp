@@ -178,6 +178,14 @@ export function importResumeTextIntoProfile(
     source:
       options.documentReference?.source ??
       (options.sourceKind === "local-file" ? "local" : "imported"),
+    sizeBytes:
+      options.documentReference?.sizeBytes ??
+      nextProfile.documents.resume?.sizeBytes ??
+      0,
+    dataBase64:
+      options.documentReference?.dataBase64 ??
+      nextProfile.documents.resume?.dataBase64 ??
+      "",
     lastUpdatedAt:
       options.documentReference?.lastUpdatedAt ?? new Date().toISOString()
   };

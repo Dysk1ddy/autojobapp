@@ -401,18 +401,17 @@ function OptionsApp() {
       const { extractTextFromResumeFile } = await import("../shared/resume-files");
       setStatus(`Parsing ${resumeImportFile.name} locally...`);
       const extracted = await extractTextFromResumeFile(resumeImportFile);
+      const documentReference = await createDocumentReferenceFromFile(
+        resumeImportFile,
+        "local"
+      );
       const result = importResumeTextIntoProfile(draftProfile, extracted.text, {
         sourceKind: "local-file",
         sourceName: extracted.fileName,
         sourceMimeType: extracted.mimeType,
         parserLabel: extracted.parserLabel,
         warnings: extracted.warnings,
-        documentReference: {
-          name: extracted.fileName,
-          fileName: extracted.fileName,
-          mimeType: extracted.mimeType,
-          source: "local"
-        }
+        documentReference
       });
       const nextState = await updateStoredState((current) => ({
         ...current,
@@ -447,21 +446,34 @@ function OptionsApp() {
     setStatus("Cleared the selected resume file.");
   }
 
-  function linkSelectedResumeFile() {
+  async function linkSelectedResumeFile() {
     if (!draftProfile || !resumeImportFile) {
       return;
     }
 
-    updateDraftProfile((profile) => ({
-      ...profile,
-      documents: {
-        ...profile.documents,
-        resume: createDocumentReferenceFromFile(resumeImportFile, "local")
-      }
-    }));
-    setStatus(
-      `${resumeImportFile.name} is linked as the saved resume for this profile. Save changes to keep it.`
-    );
+    setBusy(true);
+
+    try {
+      const documentReference = await createDocumentReferenceFromFile(
+        resumeImportFile,
+        "local"
+      );
+
+      updateDraftProfile((profile) => ({
+        ...profile,
+        documents: {
+          ...profile.documents,
+          resume: documentReference
+        }
+      }));
+      setStatus(
+        `${resumeImportFile.name} is linked as the saved resume for this profile and is ready for autofill uploads. Save changes to keep it.`
+      );
+    } catch (error) {
+      setStatus(toErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function removeLinkedResume() {
@@ -613,7 +625,7 @@ function OptionsApp() {
     <main className="page-shell options-shell">
       <section className="surface hero-card wide-hero">
         <div className="hero-copy">
-          <span className="eyebrow">Step 15 AI assist control, fully auto, and workflow control</span>
+          <span className="eyebrow">Step 16 shortcuts, resume upload, and AI workflow control</span>
           <h1>Edit what gets filled before you ever touch submit.</h1>
           <p>
             The options page now works like a real drafting workspace instead of
@@ -622,10 +634,10 @@ function OptionsApp() {
             auto-submit, enable AI-assisted autofill with your own OpenAI API
             key, decide how much control AI should have over field selection and
             value priority, decide whether AI-assisted fills must stay
-            review-first or can run fully auto, upload a saved resume reference,
-            import resume files or pasted text into the draft profile with
-            on-demand parsers, and inspect both ATS adapter behavior and
-            multi-step application flow.
+            review-first or can run fully auto, attach a saved resume that can
+            be auto-uploaded into detected resume fields, import resume files or
+            pasted text into the draft profile with on-demand parsers, and
+            inspect both ATS adapter behavior and multi-step application flow.
           </p>
         </div>
         <div className="badge-row">
@@ -959,8 +971,8 @@ function OptionsApp() {
             />
             <p className="helper-line">
               Select a `.txt`, `.pdf`, or `.docx` resume to either link it as
-              the saved resume for this profile or parse it locally into the
-              draft fields below.
+              the saved upload-ready resume for this profile or parse it locally
+              into the draft fields below.
             </p>
             {resumeImportFile ? (
               <p className="helper-line">
@@ -2037,10 +2049,9 @@ function OptionsApp() {
             </div>
 
             <p className="muted">
-              Saved resume uploads are kept as local profile references for
-              matching and debugging. Live job-site file inputs still require
-              manual interaction because browser security blocks scripted file
-              uploads.
+              Saved resume uploads now keep a local copy of the selected file so
+              the autofill engine can attach it to detected resume upload inputs
+              on supported job application pages.
             </p>
           </section>
         </>
@@ -2340,8 +2351,8 @@ function OptionsApp() {
             AI-assisted autofill can now be enabled with a saved OpenAI API key
           </li>
           <li className="roadmap-active">
-            A resume file can now be linked as the saved resume for the active
-            profile
+            A resume file can now be linked as the saved upload-ready resume for
+            the active profile
           </li>
           <li className="roadmap-active">
             Resume text can be imported locally into the draft profile for
@@ -2523,18 +2534,39 @@ function formatShortDate(value: string): string {
   return new Date(value).toLocaleDateString();
 }
 
-function createDocumentReferenceFromFile(
+async function createDocumentReferenceFromFile(
   file: File,
   source: DocumentReference["source"]
-): DocumentReference {
+) : Promise<DocumentReference> {
+  const dataBase64 = await readFileAsBase64(file);
+
   return {
     id: createId("resume"),
     name: file.name,
     fileName: file.name,
     mimeType: file.type || "application/octet-stream",
     source,
+    sizeBytes: file.size,
+    dataBase64,
     lastUpdatedAt: new Date().toISOString()
   };
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const [, dataBase64 = ""] = result.split(",", 2);
+      resolve(dataBase64);
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error(`Unable to read ${file.name}.`));
+    };
+
+    reader.readAsDataURL(file);
+  });
 }
 
 function createProfileBackupFileName(label: string): string {
