@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AutoJobApp
 
 AutoJobApp is a Chrome extension project for speeding up repetitive job applications while keeping the user in control. The long-term goal is smart, confidence-based autofill for multi-step application flows. The project now has a working extension foundation, a versioned applicant profile schema, a field classification engine, a first-pass autofill engine, a usable profile editor plus fill preview workflow, a first adapter layer for major ATS platforms, local resume-import plus workflow guidance, and a real fixture-backed hardening suite.
@@ -410,3 +411,7 @@ npm.cmd run test:e2e
 ## Next step
 
 The planned build sequence is complete. The highest-value follow-on work would be encrypted local document metadata, stronger confidence tuning for fields like Lever LinkedIn, better answer-template ranking, and more fixture growth for edge cases discovered on real application pages.
+=======
+# autojobapp
+Auto job application Chrome extension, coded using Codex
+>>>>>>> c53b6b8ec28f1eb03c04c9d40323b2ef2cb05852
