@@ -201,4 +201,50 @@ describe("scanPage", () => {
       )
     ).toBe(true);
   });
+
+  it("detects choice controls inside a shadow root", () => {
+    document.body.innerHTML = "";
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+
+    shadow.innerHTML = `
+      <form>
+        <div role="radiogroup" id="shadow-sponsorship-group" aria-labelledby="shadow-sponsorship-label">
+          <div id="shadow-sponsorship-label">Will you require sponsorship in the future?</div>
+          <div role="radio" id="shadow-sponsorship-yes" aria-checked="false">Yes</div>
+          <div role="radio" id="shadow-sponsorship-no" aria-checked="false">No</div>
+        </div>
+        <div role="group" id="shadow-skills-group" aria-labelledby="shadow-skills-label">
+          <div id="shadow-skills-label">Skills</div>
+          <div role="checkbox" id="shadow-skill-typescript" aria-checked="false">TypeScript</div>
+          <div role="checkbox" id="shadow-skill-react" aria-checked="false">React</div>
+        </div>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const scan = scanPage(profile, {
+      href: "https://jobs.example.com/apply/shadow-choice-controls",
+      title: "Shadow Choice Controls"
+    });
+
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.inputType === "radio" &&
+          match.label.includes("Will you require sponsorship in the future") &&
+          match.optionLabels.includes("Yes") &&
+          match.optionLabels.includes("No")
+      )
+    ).toBe(true);
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.inputType === "checkbox" &&
+          match.matchedKey === "skills.list" &&
+          match.optionLabels.includes("TypeScript")
+      )
+    ).toBe(true);
+  });
 });

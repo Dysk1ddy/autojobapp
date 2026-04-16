@@ -44,6 +44,7 @@ type FormControl =
   | CustomFormControl;
 
 type ChoiceControl = HTMLInputElement | CustomFormControl;
+type SearchRoot = Document | ShadowRoot;
 
 interface CandidateGroup {
   candidate: FieldScanCandidate;
@@ -353,10 +354,8 @@ async function expandRepeatableSections(
 
 function findVisibleAddButton(labels: string[]): HTMLElement | null {
   const normalizedLabels = labels.map(normalizeText);
-  const controls = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "button, [role='button'], input[type='button'], input[type='submit']"
-    )
+  const controls = queryAllDocuments<HTMLElement>(
+    "button, [role='button'], input[type='button'], input[type='submit']"
   );
 
   return (
@@ -384,10 +383,8 @@ function findVisibleAddButton(labels: string[]): HTMLElement | null {
 function findVisibleSubmitControl(
   workflow: ScanSummary["workflow"]
 ): HTMLElement | null {
-  const controls = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "button, [role='button'], input[type='submit'], input[type='button']"
-    )
+  const controls = queryAllDocuments<HTMLElement>(
+    "button, [role='button'], input[type='submit'], input[type='button']"
   );
   const workflowContext = normalizeText(
     [workflow.currentStep, ...workflow.detectedSteps].join(" ")
@@ -1360,9 +1357,7 @@ function setChoiceControlChecked(
     const clickTarget = checked ? resolveNativeChoiceClickTarget(element) : null;
 
     if (clickTarget) {
-      clickTarget.focus?.();
-      clickTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-      clickTarget.click();
+      activateChoiceTarget(clickTarget, getChoiceKind(element) === "radio" ? "Enter" : "Space");
       dispatchEvents(element, ["input", "change", "blur"]);
       highlightFilledElement(element);
       highlightFilledElement(clickTarget);
@@ -1370,6 +1365,14 @@ function setChoiceControlChecked(
       if (element.checked === checked) {
         return true;
       }
+    }
+
+    activateChoiceTarget(element, getChoiceKind(element) === "radio" ? "Enter" : "Space");
+    dispatchEvents(element, ["input", "change", "blur"]);
+
+    if (element.checked === checked) {
+      highlightFilledElement(element);
+      return true;
     }
 
     element.focus();
@@ -1383,9 +1386,7 @@ function setChoiceControlChecked(
     return false;
   }
 
-  element.focus();
-  element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-  element.click();
+  activateChoiceTarget(element, getChoiceKind(element) === "radio" ? "Enter" : "Space");
 
   if (isChoiceControlChecked(element) !== checked) {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1475,11 +1476,7 @@ function getNativeChoiceLabelElements(element: HTMLInputElement): HTMLElement[] 
   }
 
   if (element.id) {
-    fallback.push(
-      ...Array.from(
-        document.querySelectorAll<HTMLElement>(`label[for="${element.id}"]`)
-      )
-    );
+    fallback.push(...queryAllDocuments<HTMLElement>(`label[for="${escapeAttributeValue(element.id)}"]`));
   }
 
   return dedupeElements(fallback);
@@ -1494,7 +1491,60 @@ function resolveNativeChoiceClickTarget(
     return visibleLabel;
   }
 
+  const visibleProxy = getNativeChoiceProxyCandidates(element).find(isVisibleElement);
+
+  if (visibleProxy) {
+    return visibleProxy;
+  }
+
   return isVisibleField(element) ? element : null;
+}
+
+function getNativeChoiceProxyCandidates(element: HTMLInputElement): HTMLElement[] {
+  const candidates: HTMLElement[] = [];
+  let current = element.parentElement;
+  let depth = 0;
+
+  while (current && depth < 4) {
+    const otherChoiceControls = Array.from(
+      current.querySelectorAll<HTMLElement>(
+        "input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox']"
+      )
+    ).filter((candidate) => candidate !== element);
+
+    if (otherChoiceControls.length === 0) {
+      candidates.push(current);
+    }
+
+    current = current.parentElement;
+    depth += 1;
+  }
+
+  return dedupeElements(candidates);
+}
+
+function activateChoiceTarget(
+  target: HTMLElement,
+  keyboardKey?: "Enter" | "Space"
+): void {
+  target.scrollIntoView?.({
+    block: "center",
+    inline: "nearest"
+  });
+  target.focus?.();
+
+  if (typeof PointerEvent !== "undefined") {
+    target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    target.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  }
+
+  target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  target.click();
+
+  if (keyboardKey) {
+    dispatchKeyboardEvent(target, keyboardKey);
+  }
 }
 
 function getCustomChoiceGroupingKey(field: CustomFormControl): string | null {
@@ -1585,7 +1635,7 @@ function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
 
   if (field instanceof HTMLInputElement && field.name) {
     return dedupeElements(
-      Array.from(document.querySelectorAll<HTMLInputElement>(`input[name="${field.name}"]`)).filter(
+      queryAllDocuments<HTMLInputElement>(`input[name="${escapeAttributeValue(field.name)}"]`).filter(
         (input) => input.type === field.type
       )
     );
@@ -1598,9 +1648,7 @@ function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
 
   if (customGroupingKey) {
     return dedupeElements(
-      Array.from(
-        document.querySelectorAll<HTMLElement>(`[role="${role}"]`)
-      ).filter(
+      queryAllDocuments<HTMLElement>(`[role="${escapeAttributeValue(role)}"]`).filter(
         (element): element is ChoiceControl =>
           isCustomChoiceControl(element) &&
           getCustomChoiceGroupingKey(element) === customGroupingKey
@@ -2126,21 +2174,19 @@ function highlightFilledElement(element: HTMLElement): void {
 }
 
 function getPageFields(): FormControl[] {
-  const fields = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      [
-        "input",
-        "textarea",
-        "select",
-        "[role='textbox']",
-        "[role='combobox']",
-        "[role='listbox']",
-        "[role='radio']",
-        "[role='checkbox']",
-        "[contenteditable='true']",
-        "[contenteditable='plaintext-only']"
-      ].join(", ")
-    )
+  const fields = queryAllDocuments<HTMLElement>(
+    [
+      "input",
+      "textarea",
+      "select",
+      "[role='textbox']",
+      "[role='combobox']",
+      "[role='listbox']",
+      "[role='radio']",
+      "[role='checkbox']",
+      "[contenteditable='true']",
+      "[contenteditable='plaintext-only']"
+    ].join(", ")
   );
 
   return dedupeElements(fields.filter(isFormControlElement));
@@ -2340,7 +2386,10 @@ function extractFieldLabel(field: FormControl): string {
   const candidates = [
     extractChoiceGroupLabel(field),
     resolveAriaReferenceText(field, "aria-labelledby"),
-    field.id ? document.querySelector(`label[for="${field.id}"]`)?.textContent : "",
+    field.id
+      ? queryFirstDocument<HTMLElement>(`label[for="${escapeAttributeValue(field.id)}"]`)
+          ?.textContent
+      : "",
     getElementLabelText(field),
     field.closest("label")?.textContent,
     field.getAttribute("aria-label"),
@@ -2431,7 +2480,7 @@ function extractOptionLabels(field: FormControl): string[] {
   }
 
   if (isNativeChoiceControl(field) && field.name) {
-    return Array.from(document.querySelectorAll<HTMLInputElement>("input"))
+    return queryAllDocuments<HTMLInputElement>("input")
       .filter(
         (input) =>
           input.type === field.type &&
@@ -2597,13 +2646,68 @@ function resolvePrimaryElement(group: CandidateGroup): FormControl | null {
   return resolveCurrentGroupElements(group)[0] ?? null;
 }
 
+function queryAllDocuments<T extends Element>(selector: string): T[] {
+  try {
+    return dedupeElements(
+      collectSearchRoots().flatMap((root) => Array.from(root.querySelectorAll<T>(selector)))
+    );
+  } catch {
+    return [];
+  }
+}
+
+function queryFirstDocument<T extends Element>(selector: string): T | null {
+  return queryAllDocuments<T>(selector)[0] ?? null;
+}
+
+function collectSearchRoots(): SearchRoot[] {
+  const roots: SearchRoot[] = [];
+  const visited = new Set<Node>();
+
+  const visitRoot = (root: SearchRoot) => {
+    if (visited.has(root)) {
+      return;
+    }
+
+    visited.add(root);
+    roots.push(root);
+
+    Array.from(root.querySelectorAll<HTMLElement>("*")).forEach((element) => {
+      if (element.shadowRoot) {
+        visitRoot(element.shadowRoot);
+      }
+
+      if (element instanceof HTMLIFrameElement) {
+        const frameDocument = resolveAccessibleFrameDocument(element);
+
+        if (frameDocument) {
+          visitRoot(frameDocument);
+        }
+      }
+    });
+  };
+
+  visitRoot(document);
+  return roots;
+}
+
+function resolveAccessibleFrameDocument(frame: HTMLIFrameElement): Document | null {
+  try {
+    return frame.contentDocument && frame.contentDocument.documentElement
+      ? frame.contentDocument
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function queryElementsFromSelectorHint(selectorHint: string): HTMLElement[] {
   if (!selectorHint || selectorHint.includes(":index(")) {
     return [];
   }
 
   try {
-    return Array.from(document.querySelectorAll<HTMLElement>(selectorHint));
+    return queryAllDocuments<HTMLElement>(selectorHint);
   } catch {
     return [];
   }
@@ -2614,8 +2718,7 @@ function queryElementsById(elementId: string): HTMLElement[] {
     return [];
   }
 
-  const element = document.getElementById(elementId);
-  return element ? [element] : [];
+  return queryAllDocuments<HTMLElement>(`[id="${escapeAttributeValue(elementId)}"]`);
 }
 
 function queryElementsByName(name: string): HTMLElement[] {
@@ -2623,12 +2726,17 @@ function queryElementsByName(name: string): HTMLElement[] {
     return [];
   }
 
-  return Array.from(document.querySelectorAll<HTMLElement>(`[name="${name}"]`));
+  return queryAllDocuments<HTMLElement>(`[name="${escapeAttributeValue(name)}"]`);
+}
+
+function escapeAttributeValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function waitForFieldSettle(field: HTMLElement, delayMs = FILL_SETTLE_DELAY_MS): Promise<void> {
   const root =
     field.closest("form, fieldset, section, article, [role='group']") ??
+    field.ownerDocument.body ??
     document.body;
 
   return new Promise((resolve) => {
@@ -2715,7 +2823,7 @@ function resolveAriaReferenceElements(
 
   return ids
     .split(/\s+/)
-    .map((id) => document.getElementById(id))
+    .flatMap((id) => queryElementsById(id))
     .filter((element): element is HTMLElement => element instanceof HTMLElement);
 }
 

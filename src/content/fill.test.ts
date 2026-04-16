@@ -518,6 +518,68 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills radio and checkbox controls inside a shadow root", async () => {
+    document.body.innerHTML = "";
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+
+    shadow.innerHTML = `
+      <form>
+        <div role="radiogroup" id="shadow-sponsorship-group" aria-labelledby="shadow-sponsorship-label">
+          <div id="shadow-sponsorship-label">Will you require sponsorship in the future?</div>
+          <div role="radio" id="shadow-sponsorship-yes" aria-checked="false" tabindex="0">Yes</div>
+          <div role="radio" id="shadow-sponsorship-no" aria-checked="false" tabindex="0">No</div>
+        </div>
+        <div role="group" id="shadow-skills-group" aria-labelledby="shadow-skills-label">
+          <div id="shadow-skills-label">Skills</div>
+          <div role="checkbox" id="shadow-skill-typescript" aria-checked="false" tabindex="0">TypeScript</div>
+          <div role="checkbox" id="shadow-skill-react" aria-checked="false" tabindex="0">React</div>
+        </div>
+      </form>
+    `;
+
+    const radios = Array.from(
+      shadow.querySelectorAll<HTMLElement>('[role="radio"]')
+    );
+    radios.forEach((radio) => {
+      radio.addEventListener("click", () => {
+        radios.forEach((candidate) => {
+          candidate.setAttribute("aria-checked", candidate === radio ? "true" : "false");
+        });
+      });
+    });
+
+    shadow.querySelectorAll<HTMLElement>('[role="checkbox"]').forEach((checkbox) => {
+      checkbox.addEventListener("click", () => {
+        checkbox.setAttribute(
+          "aria-checked",
+          checkbox.getAttribute("aria-checked") === "true" ? "false" : "true"
+        );
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.requiresFutureSponsorship = "no";
+    profile.skills = ["TypeScript"];
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/shadow-choice-controls",
+      title: "Shadow Choice Controls"
+    });
+
+    expect(
+      shadow.getElementById("shadow-sponsorship-no")?.getAttribute("aria-checked")
+    ).toBe("true");
+    expect(
+      shadow.getElementById("shadow-skill-typescript")?.getAttribute("aria-checked")
+    ).toBe("true");
+    expect(
+      shadow.getElementById("shadow-skill-react")?.getAttribute("aria-checked")
+    ).toBe("false");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
   it("fills a hidden native radio group through visible labels", async () => {
     document.body.innerHTML = `
       <form>
@@ -554,6 +616,60 @@ describe("fillPage", () => {
     });
 
     expect(noInput.checked).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clicks visible wrappers for hidden native radio groups without labels", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="question">
+          <div>Will you require sponsorship in the future?</div>
+          <div class="choice-wrapper" id="wrapper-future-yes">
+            <input type="radio" id="future-wrapper-yes" name="future-wrapper" value="Yes" style="display: none;" />
+            <span>Yes</span>
+          </div>
+          <div class="choice-wrapper" id="wrapper-future-no">
+            <input type="radio" id="future-wrapper-no" name="future-wrapper" value="No" style="display: none;" />
+            <span>No</span>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const yesInput = document.getElementById("future-wrapper-yes") as HTMLInputElement;
+    const noInput = document.getElementById("future-wrapper-no") as HTMLInputElement;
+    let wrapperActivated = false;
+
+    document.querySelectorAll<HTMLElement>(".choice-wrapper").forEach((wrapper) => {
+      wrapper.addEventListener("click", () => {
+        wrapperActivated = true;
+        const chooseNo = wrapper.id === "wrapper-future-no";
+        yesInput.checked = !chooseNo;
+        noInput.checked = chooseNo;
+      });
+    });
+
+    [yesInput, noInput].forEach((input) => {
+      input.addEventListener("change", () => {
+        if (!wrapperActivated) {
+          yesInput.checked = false;
+          noInput.checked = false;
+        }
+
+        wrapperActivated = false;
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.requiresFutureSponsorship = "no";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/wrapper-radio",
+      title: "Wrapper Radio"
+    });
+
+    expect(noInput.checked).toBe(true);
+    expect(yesInput.checked).toBe(false);
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
