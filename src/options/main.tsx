@@ -1451,7 +1451,7 @@ function OptionsApp() {
                 className="field-span-2"
                 label="Authorized countries"
                 helper="Comma-separated. Example: United States, Canada"
-                value={draftProfile.workAuthorization.authorizedCountries.join(
+                value={safeJoin(draftProfile.workAuthorization.authorizedCountries, 
                   ", "
                 )}
                 onChange={(value) =>
@@ -1547,7 +1547,7 @@ function OptionsApp() {
                 label="Skills"
                 helper="Comma-separated values are easiest to edit."
                 rows={4}
-                value={draftProfile.skills.join(", ")}
+                value={safeJoin(draftProfile.skills, ", ")}
                 onChange={updateSkills}
               />
             </div>
@@ -1615,7 +1615,7 @@ function OptionsApp() {
                         label="Prompt hints"
                         helper="One hint per line."
                         rows={3}
-                        value={template.promptHints.join("\n")}
+                        value={safeJoin(template.promptHints, "\n")}
                         onChange={(value) =>
                           updateTemplateEntry(index, (entry) => ({
                             ...entry,
@@ -1774,7 +1774,7 @@ function OptionsApp() {
                         label="Achievements"
                         helper="One achievement per line."
                         rows={4}
-                        value={entry.achievements.join("\n")}
+                        value={safeJoin(entry.achievements, "\n")}
                         onChange={(value) =>
                           updateExperienceEntry(index, (current) => ({
                             ...current,
@@ -1787,7 +1787,7 @@ function OptionsApp() {
                         label="Technologies"
                         helper="Comma-separated values."
                         rows={3}
-                        value={entry.technologies.join(", ")}
+                        value={safeJoin(entry.technologies, ", ")}
                         onChange={(value) =>
                           updateExperienceEntry(index, (current) => ({
                             ...current,
@@ -1941,7 +1941,7 @@ function OptionsApp() {
                         label="Highlights"
                         helper="One highlight per line."
                         rows={4}
-                        value={entry.highlights.join("\n")}
+                        value={safeJoin(entry.highlights, "\n")}
                         onChange={(value) =>
                           updateEducationEntry(index, (current) => ({
                             ...current,
@@ -2064,7 +2064,7 @@ function OptionsApp() {
                         label="Technologies"
                         helper="Comma-separated values."
                         rows={3}
-                        value={entry.technologies.join(", ")}
+                        value={safeJoin(entry.technologies, ", ")}
                         onChange={(value) =>
                           updateProjectEntry(index, (current) => ({
                             ...current,
@@ -2077,7 +2077,7 @@ function OptionsApp() {
                         label="Highlights"
                         helper="One highlight per line."
                         rows={4}
-                        value={entry.highlights.join("\n")}
+                        value={safeJoin(entry.highlights, "\n")}
                         onChange={(value) =>
                           updateProjectEntry(index, (current) => ({
                             ...current,
@@ -2647,6 +2647,14 @@ function parseLineSeparated(value: string): string[] {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function safeJoin(value: unknown, separator: string): string {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .join(separator)
+    : "";
 }
 
 function removeAt<T>(items: T[], index: number): T[] {

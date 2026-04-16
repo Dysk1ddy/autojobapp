@@ -41,6 +41,21 @@ describe("importResumeTextIntoProfile", () => {
     expect(result.summary.importedFields).toContain("documents.resume");
   });
 
+  it("keeps imported repeated entries fully shaped for the options editor", () => {
+    const profile = createResumeImportBaseProfile(createDefaultApplicantProfile());
+    const fixture = loadFixture("resume-sample.txt");
+
+    const result = importResumeTextIntoProfile(profile, fixture);
+
+    expect(result.profile.education[0]?.highlights).toEqual(expect.any(Array));
+    expect(result.profile.experience[0]?.achievements).toEqual(expect.any(Array));
+    expect(result.profile.experience[0]?.technologies).toEqual(expect.any(Array));
+    expect(result.profile.projects[0]?.technologies).toEqual(expect.any(Array));
+    expect(result.profile.projects[0]?.highlights).toEqual(expect.any(Array));
+    expect(result.profile.experience[0]?.employmentType).toBeDefined();
+    expect(result.profile.projects[0]?.role).toBeDefined();
+  });
+
   it("returns a warning when no resume text is provided", () => {
     const profile = createDefaultApplicantProfile();
 

@@ -1,6 +1,7 @@
 import {
   ApplicantProfile,
   DocumentReference,
+  EducationEntry,
   ExperienceEntry,
   ProjectEntry,
   ResumeImportSummary
@@ -147,17 +148,18 @@ export function importResumeTextIntoProfile(
   }
 
   if (education.school || education.degree || education.major) {
+    const currentEducation = nextProfile.education[0];
     nextProfile.education = [
       {
-        ...nextProfile.education[0],
-        id: nextProfile.education[0]?.id ?? createLocalId("edu"),
-        school: education.school || nextProfile.education[0]?.school || "",
-        degree: education.degree || nextProfile.education[0]?.degree || "",
-        major: education.major || nextProfile.education[0]?.major || "",
+        ...createEmptyEducationEntry(currentEducation),
+        id: currentEducation?.id ?? createLocalId("edu"),
+        school: education.school || currentEducation?.school || "",
+        degree: education.degree || currentEducation?.degree || "",
+        major: education.major || currentEducation?.major || "",
         highlights:
           education.highlights.length > 0
             ? education.highlights
-            : nextProfile.education[0]?.highlights || []
+            : currentEducation?.highlights || []
       }
     ];
     importedFields.push("education[0]");
@@ -166,18 +168,19 @@ export function importResumeTextIntoProfile(
   }
 
   if (experience.title || experience.company || experience.description) {
+    const currentExperience = nextProfile.experience[0];
     nextProfile.experience = [
       {
-        ...nextProfile.experience[0],
-        id: nextProfile.experience[0]?.id ?? createLocalId("exp"),
-        company: experience.company || nextProfile.experience[0]?.company || "",
-        title: experience.title || nextProfile.experience[0]?.title || "",
+        ...createEmptyExperienceEntry(currentExperience),
+        id: currentExperience?.id ?? createLocalId("exp"),
+        company: experience.company || currentExperience?.company || "",
+        title: experience.title || currentExperience?.title || "",
         description:
-          experience.description || nextProfile.experience[0]?.description || "",
+          experience.description || currentExperience?.description || "",
         achievements:
           experience.achievements.length > 0
             ? experience.achievements
-            : nextProfile.experience[0]?.achievements || []
+            : currentExperience?.achievements || []
       }
     ];
     importedFields.push("experience[0]");
@@ -186,17 +189,18 @@ export function importResumeTextIntoProfile(
   }
 
   if (project.name || project.description) {
+    const currentProject = nextProfile.projects[0];
     nextProfile.projects = [
       {
-        ...nextProfile.projects[0],
-        id: nextProfile.projects[0]?.id ?? createLocalId("proj"),
-        name: project.name || nextProfile.projects[0]?.name || "",
+        ...createEmptyProjectEntry(currentProject),
+        id: currentProject?.id ?? createLocalId("proj"),
+        name: project.name || currentProject?.name || "",
         description:
-          project.description || nextProfile.projects[0]?.description || "",
+          project.description || currentProject?.description || "",
         technologies:
           project.technologies.length > 0
             ? project.technologies
-            : nextProfile.projects[0]?.technologies || []
+            : currentProject?.technologies || []
       }
     ];
     importedFields.push("projects[0]");
@@ -568,6 +572,58 @@ function dedupe(values: string[]): string[] {
   return values.filter(
     (value, index) => Boolean(value) && values.indexOf(value) === index
   );
+}
+
+function createEmptyEducationEntry(
+  current?: Partial<EducationEntry>
+): EducationEntry {
+  return {
+    id: current?.id ?? createLocalId("edu"),
+    school: current?.school ?? "",
+    degree: current?.degree ?? "",
+    major: current?.major ?? "",
+    minor: current?.minor ?? "",
+    gpa: current?.gpa ?? "",
+    startDate: current?.startDate ?? "",
+    endDate: current?.endDate ?? "",
+    location: current?.location ?? "",
+    currentlyEnrolled: current?.currentlyEnrolled ?? false,
+    highlights: current?.highlights ?? []
+  };
+}
+
+function createEmptyExperienceEntry(
+  current?: Partial<ExperienceEntry>
+): ExperienceEntry {
+  return {
+    id: current?.id ?? createLocalId("exp"),
+    company: current?.company ?? "",
+    title: current?.title ?? "",
+    location: current?.location ?? "",
+    employmentType: current?.employmentType ?? "",
+    startDate: current?.startDate ?? "",
+    endDate: current?.endDate ?? "",
+    current: current?.current ?? false,
+    description: current?.description ?? "",
+    achievements: current?.achievements ?? [],
+    technologies: current?.technologies ?? []
+  };
+}
+
+function createEmptyProjectEntry(
+  current?: Partial<ProjectEntry>
+): ProjectEntry {
+  return {
+    id: current?.id ?? createLocalId("proj"),
+    name: current?.name ?? "",
+    role: current?.role ?? "",
+    description: current?.description ?? "",
+    technologies: current?.technologies ?? [],
+    link: current?.link ?? "",
+    startDate: current?.startDate ?? "",
+    endDate: current?.endDate ?? "",
+    highlights: current?.highlights ?? []
+  };
 }
 
 function cloneProfile(profile: ApplicantProfile): ApplicantProfile {
