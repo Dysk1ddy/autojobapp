@@ -22,10 +22,11 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 16. Add a keyboard shortcut for autofill and auto-upload for saved resumes.
 17. Improve fill reliability for custom widgets and framework-driven rerenders.
 18. Add ChatGPT-powered resume scanning for uploaded resumes in Options.
+19. Harden resume import, add OpenAI verification in Options, and expand AI profile drafting coverage.
 
-This repo is currently on Step 18.
+This repo is currently on Step 19.
 
-## What Step 18 includes
+## What Step 19 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -47,6 +48,10 @@ This repo is currently on Step 18.
 - Local pasted-resume import that updates the draft applicant profile
 - Local resume file import for `.txt`, `.pdf`, and `.docx`
 - ChatGPT-powered resume scanning for uploaded `.txt`, `.pdf`, and `.docx` resumes in the Options page
+- Lightweight parse-only resume imports so local and ChatGPT parsing no longer try to stash the full file binary unless you explicitly link the file for upload
+- OpenAI API key verification from the Options page, including saved verification status, message, model, and last response id
+- Options-page error recovery so parser/runtime failures show a recoverable surface instead of blanking the page
+- Broader AI resume drafting that can fill additional safe profile blanks such as preferred name, remote or clearance notes when explicit, and reusable template answers when those slots are empty
 - Lazy-loaded resume parser chunks so PDF and DOCX logic only loads when a file import is requested
 - Template suggestion surfaces for motivation, salary, relocation, sponsorship, and similar questions
 - Multi-step workflow detection with current-step and next-action hints
@@ -80,7 +85,7 @@ This repo is currently on Step 18.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 18 is configurable where it matters. Neutral mode is now the default for new installs so medium-confidence matches get a first pass, Conservative mode only autofills `high` confidence matches, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, saved resumes can be uploaded automatically when a page exposes a resume-style file input, custom widgets like contenteditable textboxes or ARIA comboboxes now get a native retry-and-verify fill pass, and uploaded resumes can now be locally extracted then sent to ChatGPT to map more fields into the draft profile before saving.
+Step 19 is configurable where it matters. Neutral mode is now the default for new installs so medium-confidence matches get a first pass, Conservative mode only autofills `high` confidence matches, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, saved resumes can be uploaded automatically when a page exposes a resume-style file input, custom widgets like contenteditable textboxes or ARIA comboboxes now get a native retry-and-verify fill pass, uploaded resumes can now be locally extracted then sent to ChatGPT to map more fields into the draft profile before saving, and the Options page can now verify OpenAI connectivity before you rely on ChatGPT-powered features.
 
 ## Project structure
 
@@ -146,6 +151,7 @@ Responsible for:
 - asking the content script to scan the page
 - optionally requesting AI suggestions from OpenAI based on the configured AI control scope
 - handling explicit ChatGPT resume-import requests from the Options page
+- verifying OpenAI API key and model access for the Options page
 - storing the last scan result
 
 ### Content script
@@ -184,6 +190,7 @@ Responsible for:
 - lazy-loading the file parser modules so the options UI stays lighter on first load
 - extracting contact details, summary, skills, and first-pass experience or education hints
 - optionally sending locally extracted resume text to OpenAI so ChatGPT can map more of an uploaded resume into structured profile fields
+- keeping parse-only file imports lightweight so only explicit linking stores uploadable file bytes
 - starting resume imports from a clean import base so uploaded resumes replace the sample seed instead of silently preserving placeholder values
 - updating the draft profile for review before the user saves it
 
@@ -226,6 +233,7 @@ Responsible for:
 - editing the active applicant profile through a draft form
 - editing extension-level fill mode, auto-submit, fully auto, AI scope, and AI priority settings
 - editing the AI-assist toggle, locally stored OpenAI API key, and custom AI instructions
+- verifying whether the saved OpenAI key and selected model are actually usable before running ChatGPT features
 - linking a saved resume with uploadable file data
 - linking a saved resume file to the active profile
 - importing and exporting applicant profile JSON backups
@@ -256,6 +264,7 @@ It currently contains:
 - `settings.openAiApiKey`: the locally stored OpenAI API key used for optional AI assistance
 - `settings.aiAssistModel`: the OpenAI model alias used for optional AI assistance
 - `settings.aiCustomInstructions`: optional extra guidance appended to the AI system prompt
+- `lastAiVerification`: the latest OpenAI verification result shown in Options
 - `profiles[].documents.resume.dataBase64`: locally stored file bytes used for saved resume uploads
 - `profiles[].documents.resume.sizeBytes`: saved resume file size for debugging and upload reconstruction
 - `lastScan`: latest scan summary from the popup

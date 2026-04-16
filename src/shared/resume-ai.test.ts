@@ -5,6 +5,7 @@ import { AiResumeImportResponse, mergeAiResumePatch } from "./resume-ai";
 describe("mergeAiResumePatch", () => {
   it("maps structured AI resume data into the applicant profile", () => {
     const profile = createDefaultApplicantProfile();
+    profile.templates[0].answer = "";
     const patch: AiResumeImportResponse = {
       summary: "Extracted core resume details.",
       warnings: [],
@@ -12,6 +13,7 @@ describe("mergeAiResumePatch", () => {
         fullName: "Taylor Applicant",
         firstName: "Taylor",
         lastName: "Applicant",
+        preferredName: "Taylor",
         headline: "Full-stack engineer",
         summary: "Builds reliable products across frontend and backend systems."
       },
@@ -71,6 +73,11 @@ describe("mergeAiResumePatch", () => {
         }
       ],
       skills: ["TypeScript", "React", "Node.js"],
+      workAuthorization: {
+        authorizedCountries: ["United States"],
+        remoteWorkPreference: "Remote or hybrid",
+        clearanceStatus: ""
+      },
       certifications: [
         {
           name: "AWS Certified Cloud Practitioner",
@@ -79,6 +86,14 @@ describe("mergeAiResumePatch", () => {
           expirationDate: "",
           credentialId: "AWS-123",
           credentialUrl: "https://verify.example.com/aws-123"
+        }
+      ],
+      templates: [
+        {
+          title: "AI cover note",
+          category: "cover-note",
+          promptHints: ["cover note", "introduction"],
+          answer: "I build reliable application workflows and candidate-facing tools."
         }
       ]
     };
@@ -95,10 +110,15 @@ describe("mergeAiResumePatch", () => {
     expect(result.profile.certifications[0]?.name).toBe(
       "AWS Certified Cloud Practitioner"
     );
+    expect(result.profile.workAuthorization.remoteWorkPreference).toBe(
+      "Remote or hybrid"
+    );
+    expect(result.profile.templates[0]?.answer).toContain("candidate-facing tools");
     expect(result.profile.skills).toContain("TypeScript");
     expect(result.importedFields).toContain("personal.headline");
     expect(result.importedFields).toContain("experience[0]");
     expect(result.importedFields).toContain("certifications[0]");
+    expect(result.importedFields).toContain("templates.cover-note");
   });
 
   it("ignores empty AI array entries so blank filler objects do not wipe the draft", () => {
@@ -112,6 +132,7 @@ describe("mergeAiResumePatch", () => {
         fullName: "",
         firstName: "",
         lastName: "",
+        preferredName: "",
         headline: "",
         summary: ""
       },
@@ -147,7 +168,13 @@ describe("mergeAiResumePatch", () => {
       ],
       projects: [],
       skills: [],
-      certifications: []
+      workAuthorization: {
+        authorizedCountries: [],
+        remoteWorkPreference: "",
+        clearanceStatus: ""
+      },
+      certifications: [],
+      templates: []
     });
 
     expect(result.profile.experience[0]?.company).toBe("Existing Co");

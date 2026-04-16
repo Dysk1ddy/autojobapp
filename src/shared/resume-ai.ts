@@ -266,6 +266,13 @@ export function mergeAiResumePatch(
   );
   assignStringField(
     nextProfile.personal,
+    "preferredName",
+    patch.personal.preferredName,
+    "personal.preferredName",
+    importedFields
+  );
+  assignStringField(
+    nextProfile.personal,
     "headline",
     patch.personal.headline,
     "personal.headline",
@@ -364,10 +371,50 @@ export function mergeAiResumePatch(
     importedFields.add("skills");
   }
 
+  const preferredNameFromFirstName = cleanString(
+    patch.personal.preferredName || patch.personal.firstName
+  );
+
+  if (!nextProfile.personal.preferredName && preferredNameFromFirstName) {
+    nextProfile.personal.preferredName = preferredNameFromFirstName;
+    importedFields.add("personal.preferredName");
+  }
+
+  const authorizedCountries = sanitizeStringArray(
+    patch.workAuthorization.authorizedCountries,
+    5
+  );
+  if (
+    authorizedCountries.length > 0 &&
+    !sameStringArray(
+      nextProfile.workAuthorization.authorizedCountries,
+      authorizedCountries
+    )
+  ) {
+    nextProfile.workAuthorization.authorizedCountries = authorizedCountries;
+    importedFields.add("workAuthorization.authorizedCountries");
+  }
+
+  assignStringField(
+    nextProfile.workAuthorization,
+    "remoteWorkPreference",
+    patch.workAuthorization.remoteWorkPreference,
+    "workAuthorization.remoteWorkPreference",
+    importedFields
+  );
+  assignStringField(
+    nextProfile.workAuthorization,
+    "clearanceStatus",
+    patch.workAuthorization.clearanceStatus,
+    "workAuthorization.clearanceStatus",
+    importedFields
+  );
+
   mergeEducationEntries(nextProfile, patch.education, importedFields);
   mergeExperienceEntries(nextProfile, patch.experience, importedFields);
   mergeProjectEntries(nextProfile, patch.projects, importedFields);
   mergeCertificationEntries(nextProfile, patch.certifications, importedFields);
+  mergeTemplateEntries(nextProfile, patch.templates, importedFields);
 
   if (importedFields.size > 0) {
     nextProfile.updatedAt = new Date().toISOString();
@@ -399,11 +446,19 @@ function buildAiResumePromptPayload(
       label: profile.label,
       personal: {
         fullName: profile.personal.fullName,
+        preferredName: profile.personal.preferredName,
         headline: profile.personal.headline
       },
       contact: {
         email: profile.contact.email,
         phone: profile.contact.phone
+      },
+      workAuthorization: {
+        authorizedCountries: profile.workAuthorization.authorizedCountries,
+        requiresSponsorship: profile.workAuthorization.requiresSponsorship,
+        requiresFutureSponsorship:
+          profile.workAuthorization.requiresFutureSponsorship,
+        willingToRelocate: profile.workAuthorization.willingToRelocate
       }
     },
     localParserHints: {
@@ -416,7 +471,12 @@ function buildAiResumePromptPayload(
       skills: baselineProfile.skills.slice(0, 12),
       education: baselineProfile.education.slice(0, 2),
       experience: baselineProfile.experience.slice(0, 2),
-      projects: baselineProfile.projects.slice(0, 2)
+      projects: baselineProfile.projects.slice(0, 2),
+      templates: baselineProfile.templates.slice(0, 4).map((template) => ({
+        title: template.title,
+        category: template.category,
+        answer: template.answer
+      }))
     },
     resumeText
   };
@@ -436,7 +496,9 @@ function createAiResumeResponseSchema() {
       "experience",
       "projects",
       "skills",
-      "certifications"
+      "workAuthorization",
+      "certifications",
+      "templates"
     ],
     properties: {
       summary: { type: "string" },
@@ -444,11 +506,19 @@ function createAiResumeResponseSchema() {
       personal: {
         type: "object",
         additionalProperties: false,
-        required: ["fullName", "firstName", "lastName", "headline", "summary"],
+        required: [
+          "fullName",
+          "firstName",
+          "lastName",
+          "preferredName",
+          "headline",
+          "summary"
+        ],
         properties: stringProperties(
           "fullName",
           "firstName",
           "lastName",
+          "preferredName",
           "headline",
           "summary"
         )
@@ -595,6 +665,22 @@ function createAiResumeResponseSchema() {
         type: "array",
         items: { type: "string" }
       },
+      workAuthorization: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "authorizedCountries",
+          "remoteWorkPreference",
+          "clearanceStatus"
+        ],
+        properties: {
+          authorizedCountries: {
+            type: "array",
+            items: { type: "string" }
+          },
+          ...stringProperties("remoteWorkPreference", "clearanceStatus")
+        }
+      },
       certifications: {
         type: "array",
         items: {
@@ -616,6 +702,34 @@ function createAiResumeResponseSchema() {
             "credentialId",
             "credentialUrl"
           )
+        }
+      },
+      templates: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "category", "promptHints", "answer"],
+          properties: {
+            title: { type: "string" },
+            category: {
+              type: "string",
+              enum: [
+                "cover-note",
+                "motivation",
+                "salary",
+                "relocation",
+                "sponsorship",
+                "work-authorization",
+                "general"
+              ]
+            },
+            promptHints: {
+              type: "array",
+              items: { type: "string" }
+            },
+            answer: { type: "string" }
+          }
         }
       }
     }
@@ -740,6 +854,41 @@ function mergeCertificationEntries(
   });
 }
 
+function mergeTemplateEntries(
+  profile: ApplicantProfile,
+  entries: AiResumeImportResponse["templates"],
+  importedFields: Set<string>
+) {
+  entries
+    .map((entry) =>
+      toTemplateEntry(
+        entry,
+        profile.templates.find((template) => template.category === entry.category)
+      )
+    )
+    .filter((entry): entry is AnswerTemplate => entry !== null)
+    .forEach((entry) => {
+      const existingIndex = profile.templates.findIndex(
+        (template) => template.category === entry.category
+      );
+
+      if (existingIndex === -1) {
+        profile.templates.push(entry);
+        importedFields.add(`templates.${entry.category}`);
+        return;
+      }
+
+      const current = profile.templates[existingIndex];
+
+      if (JSON.stringify(current) === JSON.stringify(entry)) {
+        return;
+      }
+
+      profile.templates[existingIndex] = entry;
+      importedFields.add(`templates.${entry.category}`);
+    });
+}
+
 function toEducationEntry(
   entry: AiResumeImportResponse["education"][number],
   current?: EducationEntry
@@ -839,6 +988,28 @@ function toCertificationEntry(
     : null;
 }
 
+function toTemplateEntry(
+  entry: AiResumeImportResponse["templates"][number],
+  current?: AnswerTemplate
+): AnswerTemplate | null {
+  const answer = cleanString(entry.answer);
+  const title = cleanString(entry.title);
+  const category = normalizeTemplateCategory(entry.category);
+  const resolvedAnswer = cleanString(current?.answer || "") || answer;
+
+  if (!resolvedAnswer || !category) {
+    return null;
+  }
+
+  return {
+    id: current?.id ?? createLocalId("tmpl"),
+    title: current?.title || title || createTemplateTitle(category),
+    category,
+    promptHints: preferNonEmptyArray(current?.promptHints, entry.promptHints, 8),
+    answer: resolvedAnswer
+  };
+}
+
 function assignStringField<T extends object, K extends keyof T>(
   target: T,
   key: K,
@@ -895,6 +1066,42 @@ function sameStringArray(left: string[], right: string[]): boolean {
 
 function createAiResumeParserLabel(baseLabel: string): string {
   return baseLabel.includes("openai") ? baseLabel : `${baseLabel}+openai`;
+}
+
+function normalizeTemplateCategory(
+  value: string
+): TemplateCategory | null {
+  switch (value) {
+    case "cover-note":
+    case "motivation":
+    case "salary":
+    case "relocation":
+    case "sponsorship":
+    case "work-authorization":
+    case "general":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function createTemplateTitle(category: TemplateCategory): string {
+  switch (category) {
+    case "cover-note":
+      return "AI cover note";
+    case "motivation":
+      return "AI motivation answer";
+    case "salary":
+      return "AI salary answer";
+    case "relocation":
+      return "AI relocation answer";
+    case "sponsorship":
+      return "AI sponsorship answer";
+    case "work-authorization":
+      return "AI work authorization answer";
+    default:
+      return "AI general answer";
+  }
 }
 
 function hasMeaningfulEducationEntry(entry: EducationEntry): boolean {

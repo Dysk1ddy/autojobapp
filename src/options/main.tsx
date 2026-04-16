@@ -1,9 +1,10 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, Component, ReactNode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../styles/global.css";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "./form-fields";
 import {
   AiAssistScope,
+  AiVerificationSummary,
   AnswerTemplate,
   ApplicantProfile,
   CertificationEntry,
@@ -23,6 +24,7 @@ import {
   getAiAssistScopeDescription,
   getAiAssistScopeLabel,
   createDefaultSettings,
+  createDefaultAiVerificationSummary,
   getFillModeDescription,
   getFillModeLabel,
   getActiveProfile,
@@ -87,6 +89,7 @@ function OptionsApp() {
   const [profileImportFileInputKey, setProfileImportFileInputKey] = useState(0);
   const [status, setStatus] = useState("Loading settings...");
   const [busy, setBusy] = useState(false);
+  const [aiVerificationPending, setAiVerificationPending] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -117,6 +120,15 @@ function OptionsApp() {
           JSON.stringify(draftSettings) !== JSON.stringify(state.settings)
         : false,
     [draftProfile, activeProfile, draftSettings, state.settings]
+  );
+  const aiVerification = useMemo<AiVerificationSummary>(
+    () =>
+      state.lastAiVerification ??
+      createDefaultAiVerificationSummary({
+        configured: Boolean(draftSettings.openAiApiKey.trim()),
+        model: draftSettings.aiAssistModel
+      }),
+    [draftSettings.aiAssistModel, draftSettings.openAiApiKey, state.lastAiVerification]
   );
 
   async function refresh() {
@@ -311,6 +323,42 @@ function OptionsApp() {
     }));
   }
 
+  async function handleVerifyOpenAiKey() {
+    if (!draftSettings.openAiApiKey.trim()) {
+      setStatus("Paste an OpenAI API key before running verification.");
+      return;
+    }
+
+    setAiVerificationPending(true);
+    setStatus(`Verifying OpenAI access for ${draftSettings.aiAssistModel}...`);
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "VERIFY_OPENAI_KEY",
+        settingsOverride: {
+          openAiApiKey: draftSettings.openAiApiKey,
+          aiAssistModel: draftSettings.aiAssistModel
+        }
+      });
+
+      if (!response.ok || !response.aiVerification) {
+        throw new Error(
+          response.ok
+            ? "The OpenAI verification request did not return a status."
+            : response.error
+        );
+      }
+
+      setState(response.state ?? state);
+      setStatus(response.aiVerification.message);
+    } catch (error) {
+      setState(await readState());
+      setStatus(`OpenAI verification failed: ${toErrorMessage(error)}`);
+    } finally {
+      setAiVerificationPending(false);
+    }
+  }
+
   function handleProfileImportSelection(event: ChangeEvent<HTMLInputElement>) {
     setProfileImportFile(event.target.files?.[0] ?? null);
   }
@@ -406,7 +454,7 @@ function OptionsApp() {
       const { extractTextFromResumeFile } = await import("../shared/resume-files");
       setStatus(`Parsing ${resumeImportFile.name} locally...`);
       const extracted = await extractTextFromResumeFile(resumeImportFile);
-      const documentReference = await createDocumentReferenceFromFile(
+      const documentReference = createDocumentMetadataReferenceFromFile(
         resumeImportFile,
         "local"
       );
@@ -463,7 +511,7 @@ function OptionsApp() {
       const { extractTextFromResumeFile } = await import("../shared/resume-files");
       setStatus(`Extracting text from ${resumeImportFile.name} for ChatGPT...`);
       const extracted = await extractTextFromResumeFile(resumeImportFile);
-      const documentReference = await createDocumentReferenceFromFile(
+      const documentReference = createDocumentMetadataReferenceFromFile(
         resumeImportFile,
         "local"
       );
@@ -503,10 +551,11 @@ function OptionsApp() {
       setResumeImportFileInputKey((current) => current + 1);
       setStatus(
         response.resumeImport.summary.importedFields.length > 0
-          ? `ChatGPT mapped ${resumeImportFile.name} into ${response.resumeImport.summary.importedFields.length} profile areas. Review the draft, then save when it looks right.`
+          ? `ChatGPT mapped ${resumeImportFile.name} into ${response.resumeImport.summary.importedFields.length} profile areas, including reusable blanks where it had enough context. Review the draft, then save when it looks right.`
           : `ChatGPT reviewed ${resumeImportFile.name}, but there was not enough structured information to update the draft confidently.`
       );
     } catch (error) {
+      setState(await readState());
       setStatus(`ChatGPT resume parsing failed: ${toErrorMessage(error)}`);
     } finally {
       setBusy(false);
@@ -957,6 +1006,16 @@ function OptionsApp() {
           />
         </div>
 
+        <div className="button-row entry-actions">
+          <button
+            className="button button-secondary"
+            disabled={aiVerificationPending || !draftSettings.openAiApiKey.trim()}
+            onClick={handleVerifyOpenAiKey}
+          >
+            {aiVerificationPending ? "Verifying OpenAI..." : "Verify OpenAI API key"}
+          </button>
+        </div>
+
         <div className="mini-grid">
           <div>
             <span className="mini-label">Current mode</span>
@@ -999,9 +1058,43 @@ function OptionsApp() {
                 ? "AI review guard off"
                 : draftSettings.autoSubmit
                   ? "Final submit only"
-                  : "Manual review first"}
+              : "Manual review first"}
             </strong>
           </div>
+          <div>
+            <span className="mini-label">OpenAI status</span>
+            <strong>{aiVerification.status}</strong>
+          </div>
+          <div>
+            <span className="mini-label">Last verified</span>
+            <strong>
+              {aiVerification.checkedAt
+                ? formatShortDate(aiVerification.checkedAt)
+                : "Not checked"}
+            </strong>
+          </div>
+          <div>
+            <span className="mini-label">Last response</span>
+            <strong>{aiVerification.responseId || "No verification yet"}</strong>
+          </div>
+        </div>
+
+        <div className="match-list">
+          <article className="match-row">
+            <div className="match-main">
+              <div className="match-title-row">
+                <strong className="match-title">OpenAI verification</strong>
+                <span
+                  className={`confidence-pill ${getAiVerificationPillClass(
+                    aiVerification.status
+                  )}`}
+                >
+                  {aiVerification.status}
+                </span>
+              </div>
+              <p className="helper-line">{aiVerification.message}</p>
+            </div>
+          </article>
         </div>
 
         <p className="helper-line">
@@ -1056,6 +1149,11 @@ function OptionsApp() {
               into the draft fields below. ChatGPT parsing uses the local text
               extraction first, then sends only the extracted resume text to
               OpenAI with the API key saved above.
+            </p>
+            <p className="helper-line">
+              Parse-only actions keep the import lightweight. Use `Link selected
+              file as saved resume` when you want the actual file stored for
+              later auto-upload on job application pages.
             </p>
             {resumeImportFile ? (
               <p className="helper-line">
@@ -2635,6 +2733,34 @@ function formatShortDate(value: string): string {
   return new Date(value).toLocaleDateString();
 }
 
+function getAiVerificationPillClass(status: AiVerificationSummary["status"]): string {
+  switch (status) {
+    case "valid":
+      return "confidence-high";
+    case "invalid":
+      return "confidence-unmatched";
+    case "error":
+      return "confidence-medium";
+    default:
+      return "confidence-low";
+  }
+}
+
+function createDocumentMetadataReferenceFromFile(
+  file: File,
+  source: DocumentReference["source"]
+): Partial<DocumentReference> {
+  return {
+    id: createId("resume-meta"),
+    name: file.name,
+    fileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    source,
+    sizeBytes: file.size,
+    lastUpdatedAt: new Date().toISOString()
+  };
+}
+
 async function createDocumentReferenceFromFile(
   file: File,
   source: DocumentReference["source"]
@@ -2698,4 +2824,52 @@ function downloadTextFile(
   }, 0);
 }
 
-createRoot(document.getElementById("root")!).render(<OptionsApp />);
+class OptionsErrorBoundary extends Component<
+  { children: ReactNode },
+  { message: string | null }
+> {
+  state = {
+    message: null as string | null
+  };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      message: toErrorMessage(error)
+    };
+  }
+
+  override componentDidCatch(error: unknown) {
+    console.error("AutoJobApp options page crashed:", error);
+  }
+
+  override render() {
+    if (this.state.message) {
+      return (
+        <div className="page-shell options-shell">
+          <section className="surface">
+            <div className="section-head">
+              <h2>Options recovered from an error</h2>
+              <span className="inline-note">The page stayed alive for debugging.</span>
+            </div>
+            <p className="helper-line">
+              {this.state.message}
+            </p>
+            <div className="button-row">
+              <button className="button" onClick={() => window.location.reload()}>
+                Reload options page
+              </button>
+            </div>
+          </section>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById("root")!).render(
+  <OptionsErrorBoundary>
+    <OptionsApp />
+  </OptionsErrorBoundary>
+);
