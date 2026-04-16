@@ -414,6 +414,110 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills a single affirmative checkbox from a yes/no profile value", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          <input type="checkbox" name="relocate" />
+          I am willing to relocate
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.willingToRelocate = "yes";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/relocate-checkbox",
+      title: "Relocate Checkbox"
+    });
+
+    expect(
+      (document.querySelector('input[name="relocate"]') as HTMLInputElement).checked
+    ).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills a custom ARIA radio group", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div role="radiogroup" id="future-sponsorship-group" aria-labelledby="future-sponsorship-label">
+          <div id="future-sponsorship-label">Will you require sponsorship in the future?</div>
+          <div role="radio" id="future-sponsorship-yes" aria-checked="false" tabindex="0">Yes</div>
+          <div role="radio" id="future-sponsorship-no" aria-checked="false" tabindex="0">No</div>
+        </div>
+      </form>
+    `;
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="radio"]')
+    );
+
+    radios.forEach((radio) => {
+      radio.addEventListener("click", () => {
+        radios.forEach((candidate) => {
+          candidate.setAttribute("aria-checked", candidate === radio ? "true" : "false");
+        });
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.requiresFutureSponsorship = "no";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/custom-radio",
+      title: "Custom Radio"
+    });
+
+    expect(
+      document.getElementById("future-sponsorship-no")?.getAttribute("aria-checked")
+    ).toBe("true");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills a custom checkbox group with multiple matching answers", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div role="group" id="skills-group" aria-labelledby="skills-label">
+          <div id="skills-label">Skills</div>
+          <div role="checkbox" id="skill-typescript" aria-checked="false" tabindex="0">TypeScript</div>
+          <div role="checkbox" id="skill-react" aria-checked="false" tabindex="0">React</div>
+          <div role="checkbox" id="skill-go" aria-checked="false" tabindex="0">Go</div>
+        </div>
+      </form>
+    `;
+
+    const checkboxes = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="checkbox"]')
+    );
+
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener("click", () => {
+        const nextValue = checkbox.getAttribute("aria-checked") === "true" ? "false" : "true";
+        checkbox.setAttribute("aria-checked", nextValue);
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.skills = ["TypeScript", "React"];
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/custom-checkboxes",
+      title: "Custom Checkboxes"
+    });
+
+    expect(
+      document.getElementById("skill-typescript")?.getAttribute("aria-checked")
+    ).toBe("true");
+    expect(
+      document.getElementById("skill-react")?.getAttribute("aria-checked")
+    ).toBe("true");
+    expect(
+      document.getElementById("skill-go")?.getAttribute("aria-checked")
+    ).toBe("false");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("retries a text fill when the page clears the first attempt", async () => {
     document.body.innerHTML = `
       <form>

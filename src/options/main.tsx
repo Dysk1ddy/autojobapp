@@ -30,6 +30,7 @@ import {
   readState,
   resetStoredState,
   saveActiveProfileAndSettingsInStorage,
+  sendRuntimeMessage,
   serializeApplicantProfile,
   shouldFillConfidence,
   summarizeApplicantProfile,
@@ -435,6 +436,70 @@ function OptionsApp() {
     }
   }
 
+  async function handleResumeFileAiImport() {
+    if (!draftProfile || !resumeImportFile) {
+      return;
+    }
+
+    if (!draftSettings.openAiApiKey.trim()) {
+      setStatus(
+        "Save an OpenAI API key above before running ChatGPT resume parsing."
+      );
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`Loading the local parser for ${resumeImportFile.name}...`);
+
+    try {
+      const { extractTextFromResumeFile } = await import("../shared/resume-files");
+      setStatus(`Extracting text from ${resumeImportFile.name} for ChatGPT...`);
+      const extracted = await extractTextFromResumeFile(resumeImportFile);
+      const documentReference = await createDocumentReferenceFromFile(
+        resumeImportFile,
+        "local"
+      );
+      setStatus(`Sending ${resumeImportFile.name} text to ChatGPT...`);
+
+      const response = await sendRuntimeMessage({
+        type: "AI_PARSE_RESUME",
+        payload: {
+          profile: draftProfile,
+          resumeText: extracted.text,
+          sourceKind: "local-file",
+          sourceName: extracted.fileName,
+          sourceMimeType: extracted.mimeType,
+          parserLabel: extracted.parserLabel,
+          warnings: extracted.warnings,
+          documentReference
+        }
+      });
+
+      if (!response.ok || !response.resumeImport) {
+        throw new Error(
+          response.ok
+            ? "The AI resume parser did not return an import result."
+            : response.error
+        );
+      }
+
+      setDraftProfile(cloneProfile(response.resumeImport.profile));
+      setState(response.state ?? state);
+      setResumeImportText(extracted.text);
+      setResumeImportFile(null);
+      setResumeImportFileInputKey((current) => current + 1);
+      setStatus(
+        response.resumeImport.summary.importedFields.length > 0
+          ? `ChatGPT mapped ${resumeImportFile.name} into ${response.resumeImport.summary.importedFields.length} profile areas. Review the draft, then save when it looks right.`
+          : `ChatGPT reviewed ${resumeImportFile.name}, but there was not enough structured information to update the draft confidently.`
+      );
+    } catch (error) {
+      setStatus(`ChatGPT resume parsing failed: ${toErrorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function clearResumeImportText() {
     setResumeImportText("");
     setStatus("Cleared the resume text draft.");
@@ -636,7 +701,9 @@ function OptionsApp() {
             value priority, decide whether AI-assisted fills must stay
             review-first or can run fully auto, attach a saved resume that can
             be auto-uploaded into detected resume fields, import resume files or
-            pasted text into the draft profile with on-demand parsers, and
+            pasted text into the draft profile with on-demand parsers, send an
+            uploaded resume through ChatGPT to map more fields into the draft
+            profile, and
             inspect both ATS adapter behavior and multi-step application flow.
           </p>
         </div>
@@ -952,7 +1019,8 @@ function OptionsApp() {
         <div className="section-head">
           <h2>Resume import</h2>
           <span className="inline-note">
-            Upload a saved resume or parse one locally into the draft profile
+            Upload a saved resume, parse it locally, or let ChatGPT map the
+            extracted text into the draft profile
           </span>
         </div>
 
@@ -972,11 +1040,19 @@ function OptionsApp() {
             <p className="helper-line">
               Select a `.txt`, `.pdf`, or `.docx` resume to either link it as
               the saved upload-ready resume for this profile or parse it locally
-              into the draft fields below.
+              into the draft fields below. ChatGPT parsing uses the local text
+              extraction first, then sends only the extracted resume text to
+              OpenAI with the API key saved above.
             </p>
             {resumeImportFile ? (
               <p className="helper-line">
                 Selected file: {resumeImportFile.name}
+              </p>
+            ) : null}
+            {!draftSettings.openAiApiKey.trim() ? (
+              <p className="helper-line">
+                Save an OpenAI API key in Autofill settings to enable the
+                ChatGPT resume parser for uploaded files.
               </p>
             ) : null}
           </div>
@@ -1005,6 +1081,18 @@ function OptionsApp() {
             onClick={handleResumeFileImport}
           >
             {busy ? "Working..." : "Parse and import selected file"}
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={
+              busy ||
+              !draftProfile ||
+              !resumeImportFile ||
+              !draftSettings.openAiApiKey.trim()
+            }
+            onClick={handleResumeFileAiImport}
+          >
+            {busy ? "Working..." : "Parse selected file with ChatGPT"}
           </button>
           <button
             className="button button-secondary"

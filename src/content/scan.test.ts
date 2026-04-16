@@ -159,4 +159,46 @@ describe("scanPage", () => {
       )
     ).toBe(true);
   });
+
+  it("detects custom radio and checkbox groups in generic forms", () => {
+    document.body.innerHTML = `
+      <form>
+        <div role="radiogroup" id="future-sponsorship-group" aria-labelledby="future-sponsorship-label">
+          <div id="future-sponsorship-label">Will you require sponsorship in the future?</div>
+          <div role="radio" id="future-sponsorship-yes" aria-checked="false">Yes</div>
+          <div role="radio" id="future-sponsorship-no" aria-checked="false">No</div>
+        </div>
+        <div role="group" id="skills-group" aria-labelledby="skills-label">
+          <div id="skills-label">Skills</div>
+          <div role="checkbox" id="skill-typescript" aria-checked="false">TypeScript</div>
+          <div role="checkbox" id="skill-react" aria-checked="false">React</div>
+        </div>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const scan = scanPage(profile, {
+      href: "https://jobs.example.com/apply/custom-choice-controls",
+      title: "Custom Choice Controls"
+    });
+
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.inputType === "radio" &&
+          match.label.includes("Will you require sponsorship in the future") &&
+          match.optionLabels.includes("Yes") &&
+          match.optionLabels.includes("No")
+      )
+    ).toBe(true);
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.inputType === "checkbox" &&
+          match.matchedKey === "skills.list" &&
+          match.optionLabels.includes("TypeScript") &&
+          match.optionLabels.includes("React")
+      )
+    ).toBe(true);
+  });
 });

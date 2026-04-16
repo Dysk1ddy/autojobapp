@@ -21,10 +21,11 @@ AutoJobApp is a Chrome extension project for speeding up repetitive job applicat
 15. Add broader AI control settings for scope, priority, and custom instructions.
 16. Add a keyboard shortcut for autofill and auto-upload for saved resumes.
 17. Improve fill reliability for custom widgets and framework-driven rerenders.
+18. Add ChatGPT-powered resume scanning for uploaded resumes in Options.
 
-This repo is currently on Step 17.
+This repo is currently on Step 18.
 
-## What Step 17 includes
+## What Step 18 includes
 
 - Manifest V3 extension scaffold
 - Background service worker
@@ -45,6 +46,7 @@ This repo is currently on Step 17.
 - Adapter notes surfaced in scan summaries for debugging
 - Local pasted-resume import that updates the draft applicant profile
 - Local resume file import for `.txt`, `.pdf`, and `.docx`
+- ChatGPT-powered resume scanning for uploaded `.txt`, `.pdf`, and `.docx` resumes in the Options page
 - Lazy-loaded resume parser chunks so PDF and DOCX logic only loads when a file import is requested
 - Template suggestion surfaces for motivation, salary, relocation, sponsorship, and similar questions
 - Multi-step workflow detection with current-step and next-action hints
@@ -66,6 +68,7 @@ This repo is currently on Step 17.
 - A Chrome extension shortcut for triggering autofill on the active job application page
 - Saved resume uploads that can now be attached to detected resume file inputs during autofill
 - Support for ARIA textboxes, contenteditable fields, comboboxes, and listboxes during scan and fill
+- Support for native and ARIA-based radio buttons and checkboxes, including single affirmative checkboxes and grouped multi-select answers
 - Post-fill verification plus retry logic so framework rerenders are less likely to wipe values after autofill
 - Better option discovery for custom select-style controls and stronger label extraction through `aria-labelledby`
 - Vitest plus jsdom test harness
@@ -77,7 +80,7 @@ This repo is currently on Step 17.
 - Playwright browser-level autofill verification against built generic, Greenhouse, Lever, and Workday fixture pages
 - A debugging-friendly project structure
 
-Step 17 is configurable where it matters. Neutral mode is now the default for new installs so medium-confidence matches get a first pass, Conservative mode only autofills `high` confidence matches, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, saved resumes can be uploaded automatically when a page exposes a resume-style file input, and custom widgets like contenteditable textboxes or ARIA comboboxes now get a native retry-and-verify fill pass.
+Step 18 is configurable where it matters. Neutral mode is now the default for new installs so medium-confidence matches get a first pass, Conservative mode only autofills `high` confidence matches, and Liberal adds `low`. Auto-submit stays off by default, profile backups can now be exported and re-imported as JSON, AI assist only runs when the user enables it and provides an OpenAI API key, AI-filled submits remain review-first unless you explicitly enable the fully auto override, and you can now choose how wide AI scope should be plus whether AI or the saved profile gets first priority. Autofill can also be triggered from a keyboard shortcut, saved resumes can be uploaded automatically when a page exposes a resume-style file input, custom widgets like contenteditable textboxes or ARIA comboboxes now get a native retry-and-verify fill pass, and uploaded resumes can now be locally extracted then sent to ChatGPT to map more fields into the draft profile before saving.
 
 ## Project structure
 
@@ -110,6 +113,7 @@ AutoJobApp/
 |   |   |-- core.ts
 |   |   |-- resume-file-helpers.ts
 |   |   |-- resume-files.ts
+|   |   |-- resume-ai.ts
 |   |   `-- resume.ts
 |   |-- test/
 |   |   |-- fixture-loader.ts
@@ -141,6 +145,7 @@ Responsible for:
 - injecting the content script into the active tab
 - asking the content script to scan the page
 - optionally requesting AI suggestions from OpenAI based on the configured AI control scope
+- handling explicit ChatGPT resume-import requests from the Options page
 - storing the last scan result
 
 ### Content script
@@ -178,6 +183,7 @@ Responsible for:
 - parsing local `.txt`, `.pdf`, and `.docx` resume files in the browser
 - lazy-loading the file parser modules so the options UI stays lighter on first load
 - extracting contact details, summary, skills, and first-pass experience or education hints
+- optionally sending locally extracted resume text to OpenAI so ChatGPT can map more of an uploaded resume into structured profile fields
 - updating the draft profile for review before the user saves it
 
 ### Repeated-fill layer

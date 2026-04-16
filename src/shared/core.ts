@@ -365,17 +365,40 @@ export interface StoredState {
   lastUpdatedAt: string;
 }
 
+export interface ResumeImportRequestPayload {
+  profile: ApplicantProfile;
+  resumeText: string;
+  sourceKind: ResumeImportSummary["sourceKind"];
+  sourceName: string;
+  sourceMimeType: string;
+  parserLabel: string;
+  warnings: string[];
+  documentReference?: Partial<DocumentReference>;
+}
+
+export interface RuntimeResumeImportPayload {
+  profile: ApplicantProfile;
+  summary: ResumeImportSummary;
+}
+
 export type RuntimeRequest =
   | { type: "GET_STATE" }
   | { type: "SCAN_ACTIVE_TAB" }
   | { type: "FILL_ACTIVE_TAB" }
   | { type: "UPDATE_SETTINGS"; settings: Partial<ExtensionSettings> }
+  | { type: "AI_PARSE_RESUME"; payload: ResumeImportRequestPayload }
   | { type: "SET_ACTIVE_PROFILE"; profileId: string }
   | { type: "DUPLICATE_ACTIVE_PROFILE"; label?: string }
   | { type: "RESET_STATE" };
 
 export type RuntimeResponse =
-  | { ok: true; state?: StoredState; scan?: ScanSummary; fill?: FillSummary }
+  | {
+      ok: true;
+      state?: StoredState;
+      scan?: ScanSummary;
+      fill?: FillSummary;
+      resumeImport?: RuntimeResumeImportPayload;
+    }
   | { ok: false; error: string };
 
 export type ContentRequest = {

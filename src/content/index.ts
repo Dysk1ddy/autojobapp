@@ -34,7 +34,7 @@ import {
 } from "../shared/matching";
 
 type CustomFormControl = HTMLElement & {
-  __autoJobAppCustomControl?: true;
+  __autoJobAppCustomControl: true;
 };
 
 type FormControl =
@@ -42,6 +42,8 @@ type FormControl =
   | HTMLTextAreaElement
   | HTMLSelectElement
   | CustomFormControl;
+
+type ChoiceControl = HTMLInputElement | CustomFormControl;
 
 interface CandidateGroup {
   candidate: FieldScanCandidate;
@@ -1219,6 +1221,11 @@ async function fillChoiceGroup(
         return false;
       }
 
+      if (options.length === 1 && isBooleanChoiceValue(normalizedValues)) {
+        const desiredChecked = shouldBooleanChoiceBeChecked(normalizedValues);
+        return setChoiceControlChecked(options[0], desiredChecked);
+      }
+
       const matches = options.filter((element) =>
         doesChoiceElementMatchNeedles(element, normalizedValues)
       );
@@ -1228,22 +1235,17 @@ async function fillChoiceGroup(
       }
 
       let changed = false;
+      const radioLike = getChoiceKind(options[0]) === "radio";
 
       matches.forEach((element, index) => {
-        if (element.type === "radio" && index > 0) {
+        if (radioLike && index > 0) {
           return;
         }
 
-        if (!element.checked) {
-          element.focus();
-          setNativeChecked(element, true);
-          dispatchEvents(element, ["input", "change", "blur"]);
-          highlightFilledElement(element);
-          changed = true;
-        }
+        changed = setChoiceControlChecked(element, true) || changed;
       });
 
-      return changed || matches.some((element) => element.checked);
+      return changed || matches.some(isChoiceControlChecked);
     },
     () => doesChoiceGroupMatchValue(group, resolvedValue),
     {
@@ -1320,6 +1322,217 @@ async function fillCustomSelectionControl(
   );
 }
 
+function isNativeChoiceControl(element: FormControl): element is HTMLInputElement {
+  return (
+    element instanceof HTMLInputElement &&
+    (element.type === "radio" || element.type === "checkbox")
+  );
+}
+
+function getChoiceKind(element: ChoiceControl): "radio" | "checkbox" {
+  if (element instanceof HTMLInputElement) {
+    return element.type === "radio" ? "radio" : "checkbox";
+  }
+
+  return getNormalizedRole(element) === "radio" ? "radio" : "checkbox";
+}
+
+function isChoiceControlChecked(element: ChoiceControl): boolean {
+  if (element instanceof HTMLInputElement) {
+    return element.checked;
+  }
+
+  return (
+    element.getAttribute("aria-checked") === "true" ||
+    element.getAttribute("data-selected") === "true"
+  );
+}
+
+function setChoiceControlChecked(
+  element: ChoiceControl,
+  checked: boolean
+): boolean {
+  if (element instanceof HTMLInputElement) {
+    if (element.checked === checked) {
+      return false;
+    }
+
+    element.focus();
+    setNativeChecked(element, checked);
+    dispatchEvents(element, ["input", "change", "blur"]);
+    highlightFilledElement(element);
+    return true;
+  }
+
+  if (isChoiceControlChecked(element) === checked) {
+    return false;
+  }
+
+  element.focus();
+  element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  element.click();
+
+  if (isChoiceControlChecked(element) !== checked) {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  if (isChoiceControlChecked(element) !== checked) {
+    dispatchKeyboardEvent(element, "Space");
+  }
+
+  dispatchEvents(element, ["input", "change", "blur"]);
+  highlightFilledElement(element);
+
+  if (element.hasAttribute("aria-checked") && isChoiceControlChecked(element) !== checked) {
+    if (getChoiceKind(element) === "radio" && checked) {
+      getChoiceGroupElements(element)
+        .filter(isCustomChoiceControl)
+        .forEach((candidate) => {
+          candidate.setAttribute("aria-checked", candidate === element ? "true" : "false");
+        });
+    } else {
+      element.setAttribute("aria-checked", checked ? "true" : "false");
+    }
+  }
+
+  return true;
+}
+
+function isBooleanChoiceValue(normalizedValues: string[]): boolean {
+  return normalizedValues.some((value) =>
+    ["yes", "true", "no", "false"].includes(value)
+  );
+}
+
+function shouldBooleanChoiceBeChecked(normalizedValues: string[]): boolean {
+  return normalizedValues.some((value) => value === "yes" || value === "true");
+}
+
+function getChoiceControlTokens(element: ChoiceControl): string[] {
+  const label = getChoiceControlLabel(element);
+  const explicitValue =
+    element instanceof HTMLInputElement
+      ? element.value
+      : element.getAttribute("data-value") || element.getAttribute("value") || "";
+
+  return [
+    label,
+    explicitValue,
+    element.getAttribute("aria-label") ?? "",
+    element.getAttribute("aria-valuetext") ?? "",
+    element.textContent ?? ""
+  ]
+    .map((value) => normalizeText(cleanText(value)))
+    .filter(Boolean);
+}
+
+function getChoiceControlLabel(element: ChoiceControl): string {
+  if (element instanceof HTMLInputElement) {
+    return cleanText(
+      element.labels?.[0]?.textContent || element.closest("label")?.textContent
+    );
+  }
+
+  return cleanText(
+    element.getAttribute("aria-label") ||
+      resolveAriaReferenceText(element, "aria-labelledby") ||
+      element.closest("label")?.textContent ||
+      element.textContent
+  );
+}
+
+function getCustomChoiceGroupingKey(field: CustomFormControl): string | null {
+  const role = getNormalizedRole(field);
+  const name = field.getAttribute("name")?.trim();
+
+  if (name) {
+    return `${role}:${name}`;
+  }
+
+  const container = resolveChoiceGroupContainer(field);
+  const stableValue = cleanText(
+    container?.getAttribute("aria-labelledby") ||
+      container?.id ||
+      container?.getAttribute("data-question-id") ||
+      container?.getAttribute("data-automation-id") ||
+      container?.querySelector("legend, [role='heading'], label")?.textContent
+  );
+
+  return stableValue ? `${role}:${normalizeText(stableValue)}` : null;
+}
+
+function extractChoiceGroupLabel(field: FormControl): string {
+  if (!isNativeChoiceControl(field) && !isCustomChoiceControl(field)) {
+    return "";
+  }
+
+  const container = resolveChoiceGroupContainer(field);
+
+  return cleanText(
+    resolveAriaReferenceText(container ?? field, "aria-labelledby") ||
+      container?.querySelector("legend, [role='heading'], label")?.textContent ||
+      container?.getAttribute("aria-label") ||
+      ""
+  );
+}
+
+function resolveChoiceGroupContainer(field: FormControl): HTMLElement | null {
+  return (
+    field.closest(
+      "[role='radiogroup'], [role='group'], fieldset, [data-question-id], [data-automation-id='formField'], .application-question, .field, .question"
+    ) ?? null
+  );
+}
+
+function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
+  const role = getChoiceKind(field);
+
+  if (field instanceof HTMLInputElement && field.name) {
+    return dedupeElements(
+      Array.from(document.querySelectorAll<HTMLInputElement>(`input[name="${field.name}"]`)).filter(
+        (input) => input.type === field.type
+      )
+    );
+  }
+
+  const customGroupingKey =
+    field instanceof HTMLElement && isCustomChoiceControl(field)
+      ? getCustomChoiceGroupingKey(field)
+      : null;
+
+  if (customGroupingKey) {
+    return dedupeElements(
+      Array.from(
+        document.querySelectorAll<HTMLElement>(`[role="${role}"]`)
+      ).filter(
+        (element): element is ChoiceControl =>
+          isCustomChoiceControl(element) &&
+          getCustomChoiceGroupingKey(element) === customGroupingKey
+      )
+    );
+  }
+
+  const container = resolveChoiceGroupContainer(field);
+
+  if (!container) {
+    return [field];
+  }
+
+  return dedupeElements(
+    Array.from(
+      container.querySelectorAll<HTMLElement>(
+        role === "radio"
+          ? 'input[type="radio"], [role="radio"]'
+          : 'input[type="checkbox"], [role="checkbox"]'
+      )
+    ).filter(
+      (element): element is ChoiceControl =>
+        isNativeChoiceControl(element as FormControl) ||
+        isCustomChoiceControl(element as FormControl)
+    )
+  );
+}
+
 async function performVerifiedFill(
   group: CandidateGroup,
   apply: () => boolean,
@@ -1377,11 +1590,10 @@ async function performVerifiedFill(
   };
 }
 
-function getChoiceElements(group: CandidateGroup): HTMLInputElement[] {
+function getChoiceElements(group: CandidateGroup): ChoiceControl[] {
   return resolveCurrentGroupElements(group).filter(
-    (element): element is HTMLInputElement =>
-      element instanceof HTMLInputElement &&
-      (element.type === "radio" || element.type === "checkbox")
+    (element): element is ChoiceControl =>
+      isNativeChoiceControl(element) || isCustomChoiceControl(element)
   );
 }
 
@@ -1390,26 +1602,40 @@ function doesChoiceGroupMatchValue(
   resolvedValue: ResolvedProfileValue
 ): boolean {
   const normalizedValues = normalizedNeedles(resolvedValue);
+  const options = getChoiceElements(group);
 
-  if (normalizedValues.length === 0) {
+  if (normalizedValues.length === 0 || options.length === 0) {
     return false;
   }
 
-  return getChoiceElements(group).some(
-    (element) => element.checked && doesChoiceElementMatchNeedles(element, normalizedValues)
+  if (options.length === 1 && isBooleanChoiceValue(normalizedValues)) {
+    return isChoiceControlChecked(options[0]) === shouldBooleanChoiceBeChecked(normalizedValues);
+  }
+
+  const checkedOptions = options.filter(isChoiceControlChecked);
+
+  if (checkedOptions.length === 0) {
+    return false;
+  }
+
+  const radioLike = getChoiceKind(options[0]) === "radio";
+
+  if (radioLike) {
+    return checkedOptions.some((element) =>
+      doesChoiceElementMatchNeedles(element, normalizedValues)
+    );
+  }
+
+  return normalizedValues.every((needle) =>
+    checkedOptions.some((element) => doesChoiceElementMatchNeedles(element, [needle]))
   );
 }
 
 function doesChoiceElementMatchNeedles(
-  element: HTMLInputElement,
+  element: ChoiceControl,
   normalizedValues: string[]
 ): boolean {
-  const label = cleanText(
-    element.labels?.[0]?.textContent || element.closest("label")?.textContent
-  );
-  const tokens = [label, element.value, element.getAttribute("aria-label") ?? ""]
-    .map(normalizeText)
-    .filter(Boolean);
+  const tokens = getChoiceControlTokens(element);
 
   return normalizedValues.some((needle) =>
     tokens.some((token) => token === needle || token.includes(needle) || needle.includes(token))
@@ -1444,7 +1670,7 @@ function doesTextControlMatchValue(
 }
 
 function doesCustomSelectionMatchValue(
-  element: HTMLElement,
+  element: CustomFormControl,
   resolvedValue: ResolvedProfileValue
 ): boolean {
   const normalizedValues = normalizedNeedles(resolvedValue);
@@ -1807,6 +2033,8 @@ function getPageFields(): FormControl[] {
         "[role='textbox']",
         "[role='combobox']",
         "[role='listbox']",
+        "[role='radio']",
+        "[role='checkbox']",
         "[contenteditable='true']",
         "[contenteditable='plaintext-only']"
       ].join(", ")
@@ -1920,6 +2148,10 @@ function getGroupingKey(
     return `${field.type}:${field.name}`;
   }
 
+  if (isCustomChoiceControl(field)) {
+    return getCustomChoiceGroupingKey(field) ?? candidate.fieldId ?? `field:${index}`;
+  }
+
   return candidate.fieldId || `field:${index}`;
 }
 
@@ -1963,6 +2195,7 @@ function buildSelectorHint(field: FormControl, index: number): string {
 
 function extractFieldLabel(field: FormControl): string {
   const candidates = [
+    extractChoiceGroupLabel(field),
     resolveAriaReferenceText(field, "aria-labelledby"),
     field.id ? document.querySelector(`label[for="${field.id}"]`)?.textContent : "",
     getElementLabelText(field),
@@ -2040,6 +2273,13 @@ function extractOptionLabels(field: FormControl): string[] {
       .slice(0, 8);
   }
 
+  if (isCustomChoiceControl(field)) {
+    return getChoiceGroupElements(field)
+      .map((element) => cleanText(getChoiceControlLabel(element)))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
   if (isCustomSelectionControl(field)) {
     return getAssociatedOptionElements(field)
       .map((option) => cleanText(option.textContent || option.getAttribute("aria-label")))
@@ -2047,11 +2287,7 @@ function extractOptionLabels(field: FormControl): string[] {
       .slice(0, 8);
   }
 
-  if (
-    field instanceof HTMLInputElement &&
-    (field.type === "radio" || field.type === "checkbox") &&
-    field.name
-  ) {
+  if (isNativeChoiceControl(field) && field.name) {
     return Array.from(document.querySelectorAll<HTMLInputElement>("input"))
       .filter(
         (input) =>
@@ -2145,7 +2381,9 @@ function isCustomFieldElement(field: HTMLElement): field is CustomFormControl {
     field.isContentEditable ||
     role === "textbox" ||
     role === "combobox" ||
-    role === "listbox"
+    role === "listbox" ||
+    role === "radio" ||
+    role === "checkbox"
   );
 }
 
@@ -2157,7 +2395,7 @@ function isTextFillControl(field: FormControl): boolean {
   );
 }
 
-function isCustomTextControl(field: FormControl): field is CustomFormControl {
+function isCustomTextControl(field: HTMLElement): field is CustomFormControl {
   return (
     field instanceof HTMLElement &&
     !(field instanceof HTMLInputElement) &&
@@ -2167,13 +2405,23 @@ function isCustomTextControl(field: FormControl): field is CustomFormControl {
   );
 }
 
-function isCustomSelectionControl(field: FormControl): field is CustomFormControl {
+function isCustomSelectionControl(field: HTMLElement): field is CustomFormControl {
   return (
     field instanceof HTMLElement &&
     !(field instanceof HTMLInputElement) &&
     !(field instanceof HTMLTextAreaElement) &&
     !(field instanceof HTMLSelectElement) &&
     (getNormalizedRole(field) === "combobox" || getNormalizedRole(field) === "listbox")
+  );
+}
+
+function isCustomChoiceControl(field: HTMLElement): field is CustomFormControl {
+  return (
+    field instanceof HTMLElement &&
+    !(field instanceof HTMLInputElement) &&
+    !(field instanceof HTMLTextAreaElement) &&
+    !(field instanceof HTMLSelectElement) &&
+    (getNormalizedRole(field) === "radio" || getNormalizedRole(field) === "checkbox")
   );
 }
 

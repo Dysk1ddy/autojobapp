@@ -693,6 +693,13 @@ function getCustomTagPreferenceBoost(
     return definition.preferredTags.includes("select") ? 6 : 4;
   }
 
+  if (
+    (candidate.inputType === "radio" || candidate.inputType === "checkbox") &&
+    definition.preferredTags.includes("input")
+  ) {
+    return 6;
+  }
+
   return 0;
 }
 

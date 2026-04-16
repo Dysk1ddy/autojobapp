@@ -2,6 +2,7 @@ import {
   AiAssistSummary,
   ContentRequest,
   ContentResponse,
+  ResumeImportRequestPayload,
   ScanSummary,
   duplicateActiveProfileInStorage,
   RuntimeRequest,
@@ -18,6 +19,7 @@ import {
   writeState
 } from "../shared/core";
 import { generateAiAssistSummary } from "../shared/ai";
+import { generateAiResumeImport } from "../shared/resume-ai";
 
 chrome.runtime.onInstalled.addListener(() => {
   void ensureState();
@@ -94,6 +96,9 @@ async function handleRuntimeMessage(
           ...request.settings
         }))
       };
+
+    case "AI_PARSE_RESUME":
+      return parseResumeWithAi(request.payload);
 
     default:
       return {
@@ -269,6 +274,38 @@ function attachAiAssistToScan(
   return {
     ...scan,
     aiAssist
+  };
+}
+
+async function parseResumeWithAi(
+  payload: ResumeImportRequestPayload
+): Promise<RuntimeResponse> {
+  const state = await readState();
+  const resumeImport = await generateAiResumeImport(
+    payload.profile,
+    payload.resumeText,
+    state.settings,
+    {
+      sourceKind: payload.sourceKind,
+      sourceName: payload.sourceName,
+      sourceMimeType: payload.sourceMimeType,
+      parserLabel: payload.parserLabel,
+      warnings: payload.warnings,
+      documentReference: payload.documentReference
+    }
+  );
+  const nextState = {
+    ...state,
+    lastResumeImport: resumeImport.summary,
+    lastUpdatedAt: new Date().toISOString()
+  };
+
+  await writeState(nextState);
+
+  return {
+    ok: true,
+    state: nextState,
+    resumeImport
   };
 }
 
