@@ -1,4 +1,5 @@
 import {
+  AnswerTemplate,
   ApplicantProfile,
   CertificationEntry,
   ContactDetails,
@@ -10,6 +11,8 @@ import {
   PersonalDetails,
   ProjectEntry,
   ResumeImportSummary,
+  TemplateCategory,
+  WorkAuthorizationDetails,
   toErrorMessage
 } from "./core";
 import {
@@ -26,7 +29,12 @@ export interface AiResumeImportResponse {
   warnings: string[];
   personal: Pick<
     PersonalDetails,
-    "fullName" | "firstName" | "lastName" | "headline" | "summary"
+    | "fullName"
+    | "firstName"
+    | "lastName"
+    | "preferredName"
+    | "headline"
+    | "summary"
   >;
   contact: Pick<
     ContactDetails,
@@ -77,6 +85,10 @@ export interface AiResumeImportResponse {
     >
   >;
   skills: string[];
+  workAuthorization: Pick<
+    WorkAuthorizationDetails,
+    "authorizedCountries" | "remoteWorkPreference" | "clearanceStatus"
+  >;
   certifications: Array<
     Pick<
       CertificationEntry,
@@ -87,6 +99,9 @@ export interface AiResumeImportResponse {
       | "credentialId"
       | "credentialUrl"
     >
+  >;
+  templates: Array<
+    Pick<AnswerTemplate, "title" | "category" | "promptHints" | "answer">
   >;
 }
 
@@ -132,7 +147,7 @@ export async function generateAiResumeImport(
         {
           type: "input_text",
           text:
-            "You extract structured applicant profile data from resume text. Return only facts supported by the resume. Leave unknown strings empty and unknown arrays empty. Do not invent salary, work authorization, sponsorship, EEO, disability, veteran, ethnicity, gender, date-of-birth, or social-security details. Keep summaries concise, keep bullet arrays short, and preserve links exactly when present."
+            "You extract structured applicant profile data from resume text. Return only facts supported by the resume. Leave unknown strings empty and unknown arrays empty. Do not invent EEO, disability, veteran, ethnicity, gender, date-of-birth, or social-security details. Only set work authorization or clearance fields when the resume explicitly states them. You may draft reusable answer templates when they can be grounded in the resume and current profile context. Keep summaries concise, keep bullet arrays short, and preserve links exactly when present."
         }
       ]
     }

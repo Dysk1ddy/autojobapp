@@ -2,6 +2,7 @@ import {
   AiAssistScope,
   AiAssistSummary,
   AiFieldSuggestion,
+  AiVerificationSummary,
   ApplicantProfile,
   DEFAULT_AI_ASSIST_MODEL,
   DetectedFieldMatch,
@@ -10,6 +11,7 @@ import {
   PROFILE_FIELD_KEYS,
   ProfileFieldKey,
   ScanSummary,
+  createDefaultAiVerificationSummary,
   createDefaultAiAssistSummary,
   toErrorMessage
 } from "./core";
@@ -243,6 +245,94 @@ export async function generateAiAssistSummary(
       model,
       status: "error",
       message: `AI assist failed: ${toErrorMessage(error)}`
+    });
+  }
+}
+
+export async function verifyOpenAiConnection(
+  settings: Pick<ExtensionSettings, "openAiApiKey" | "aiAssistModel">
+): Promise<AiVerificationSummary> {
+  const model = settings.aiAssistModel.trim() || DEFAULT_AI_ASSIST_MODEL;
+  const apiKey = settings.openAiApiKey.trim();
+
+  if (!apiKey) {
+    return createDefaultAiVerificationSummary({
+      configured: false,
+      model,
+      status: "invalid",
+      message: "Save an OpenAI API key before running verification."
+    });
+  }
+
+  try {
+    const response = await fetch(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        max_output_tokens: 24,
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "You are verifying API connectivity for a local browser extension. Reply with the single word OK."
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Confirm the key and model are working."
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeReadResponseText(response);
+      const invalidAuth = response.status === 401 || response.status === 403;
+
+      return createDefaultAiVerificationSummary({
+        configured: true,
+        model,
+        status: invalidAuth ? "invalid" : "error",
+        message: invalidAuth
+          ? `OpenAI rejected the API key or model access (${response.status}).`
+          : `OpenAI verification failed (${response.status}): ${
+              errorBody || response.statusText || "Unknown error"
+            }`
+      });
+    }
+
+    const rawResponse = (await response.json()) as Record<string, unknown>;
+    const outputText = extractOpenAiOutputText(rawResponse).trim();
+
+    return createDefaultAiVerificationSummary({
+      configured: true,
+      model,
+      status: "valid",
+      message: outputText
+        ? `OpenAI responded successfully: ${truncatePreview(outputText, 48)}`
+        : "OpenAI responded successfully with the selected model.",
+      responseId:
+        typeof rawResponse.id === "string" ? rawResponse.id : ""
+    });
+  } catch (error) {
+    return createDefaultAiVerificationSummary({
+      configured: true,
+      model,
+      status: "error",
+      message: `OpenAI verification failed: ${toErrorMessage(error)}`
     });
   }
 }

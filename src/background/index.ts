@@ -4,6 +4,7 @@ import {
   ContentResponse,
   ResumeImportRequestPayload,
   ScanSummary,
+  createDefaultAiVerificationSummary,
   duplicateActiveProfileInStorage,
   RuntimeRequest,
   RuntimeResponse,
@@ -18,7 +19,7 @@ import {
   toErrorMessage,
   writeState
 } from "../shared/core";
-import { generateAiAssistSummary } from "../shared/ai";
+import { generateAiAssistSummary, verifyOpenAiConnection } from "../shared/ai";
 import { generateAiResumeImport } from "../shared/resume-ai";
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -96,6 +97,9 @@ async function handleRuntimeMessage(
           ...request.settings
         }))
       };
+
+    case "VERIFY_OPENAI_KEY":
+      return verifyOpenAiKey(request.settingsOverride);
 
     case "AI_PARSE_RESUME":
       return parseResumeWithAi(request.payload);
@@ -287,22 +291,80 @@ async function parseResumeWithAi(
         ...payload.settingsOverride
       }
     : state.settings;
-  const resumeImport = await generateAiResumeImport(
-    payload.profile,
-    payload.resumeText,
-    effectiveSettings,
-    {
-      sourceKind: payload.sourceKind,
-      sourceName: payload.sourceName,
-      sourceMimeType: payload.sourceMimeType,
-      parserLabel: payload.parserLabel,
-      warnings: payload.warnings,
-      documentReference: payload.documentReference
-    }
-  );
+  try {
+    const resumeImport = await generateAiResumeImport(
+      payload.profile,
+      payload.resumeText,
+      effectiveSettings,
+      {
+        sourceKind: payload.sourceKind,
+        sourceName: payload.sourceName,
+        sourceMimeType: payload.sourceMimeType,
+        parserLabel: payload.parserLabel,
+        warnings: payload.warnings,
+        documentReference: payload.documentReference
+      }
+    );
+    const aiVerification = createDefaultAiVerificationSummary({
+      configured: Boolean(effectiveSettings.openAiApiKey.trim()),
+      model: effectiveSettings.aiAssistModel.trim(),
+      status: "valid",
+      message: "ChatGPT resume parsing completed successfully."
+    });
+    const nextState = {
+      ...state,
+      lastResumeImport: resumeImport.summary,
+      lastAiVerification: aiVerification,
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    await writeState(nextState);
+
+    return {
+      ok: true,
+      state: nextState,
+      resumeImport,
+      aiVerification
+    };
+  } catch (error) {
+    const aiVerification = createDefaultAiVerificationSummary({
+      configured: Boolean(effectiveSettings.openAiApiKey.trim()),
+      model: effectiveSettings.aiAssistModel.trim(),
+      status: effectiveSettings.openAiApiKey.trim() ? "error" : "invalid",
+      message: `ChatGPT resume parsing failed: ${toErrorMessage(error)}`
+    });
+    const nextState = {
+      ...state,
+      lastAiVerification: aiVerification,
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    await writeState(nextState);
+
+    return {
+      ok: false,
+      error: aiVerification.message
+    };
+  }
+}
+
+async function verifyOpenAiKey(
+  settingsOverride?: Partial<{
+    openAiApiKey: string;
+    aiAssistModel: string;
+  }>
+): Promise<RuntimeResponse> {
+  const state = await readState();
+  const effectiveSettings = settingsOverride
+    ? {
+        ...state.settings,
+        ...settingsOverride
+      }
+    : state.settings;
+  const aiVerification = await verifyOpenAiConnection(effectiveSettings);
   const nextState = {
     ...state,
-    lastResumeImport: resumeImport.summary,
+    lastAiVerification: aiVerification,
     lastUpdatedAt: new Date().toISOString()
   };
 
@@ -311,7 +373,7 @@ async function parseResumeWithAi(
   return {
     ok: true,
     state: nextState,
-    resumeImport
+    aiVerification
   };
 }
 

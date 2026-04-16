@@ -30,6 +30,11 @@ export type AiAssistStatus =
   | "no_candidates"
   | "completed"
   | "error";
+export type AiVerificationStatus =
+  | "unverified"
+  | "valid"
+  | "invalid"
+  | "error";
 
 export const PROFILE_FIELD_KEYS = [
   "personal.fullName",
@@ -155,6 +160,15 @@ export interface AiAssistSummary {
   message: string;
   suggestions: AiFieldSuggestion[];
   generatedAt: string;
+}
+
+export interface AiVerificationSummary {
+  configured: boolean;
+  model: string;
+  status: AiVerificationStatus;
+  message: string;
+  checkedAt: string;
+  responseId: string;
 }
 
 export interface ScanSummary {
@@ -361,6 +375,7 @@ export interface StoredState {
   lastScan: ScanSummary | null;
   lastFill: FillSummary | null;
   lastResumeImport: ResumeImportSummary | null;
+  lastAiVerification: AiVerificationSummary | null;
   debugMode: boolean;
   lastUpdatedAt: string;
 }
@@ -389,6 +404,12 @@ export type RuntimeRequest =
   | { type: "SCAN_ACTIVE_TAB" }
   | { type: "FILL_ACTIVE_TAB" }
   | { type: "UPDATE_SETTINGS"; settings: Partial<ExtensionSettings> }
+  | {
+      type: "VERIFY_OPENAI_KEY";
+      settingsOverride?: Partial<
+        Pick<ExtensionSettings, "openAiApiKey" | "aiAssistModel">
+      >;
+    }
   | { type: "AI_PARSE_RESUME"; payload: ResumeImportRequestPayload }
   | { type: "SET_ACTIVE_PROFILE"; profileId: string }
   | { type: "DUPLICATE_ACTIVE_PROFILE"; label?: string }
@@ -401,6 +422,7 @@ export type RuntimeResponse =
       scan?: ScanSummary;
       fill?: FillSummary;
       resumeImport?: RuntimeResumeImportPayload;
+      aiVerification?: AiVerificationSummary;
     }
   | { ok: false; error: string };
 
@@ -420,7 +442,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -437,6 +459,7 @@ export function createDefaultState(): StoredState {
     lastScan: null,
     lastFill: null,
     lastResumeImport: null,
+    lastAiVerification: null,
     debugMode: true,
     lastUpdatedAt: profile.updatedAt
   };
@@ -467,6 +490,20 @@ export function createDefaultAiAssistSummary(
     message: "AI-assisted autofill is disabled.",
     suggestions: [],
     generatedAt: createTimestamp(),
+    ...overrides
+  };
+}
+
+export function createDefaultAiVerificationSummary(
+  overrides: Partial<AiVerificationSummary> = {}
+): AiVerificationSummary {
+  return {
+    configured: false,
+    model: DEFAULT_AI_ASSIST_MODEL,
+    status: "unverified",
+    message: "OpenAI API key has not been verified yet.",
+    checkedAt: createTimestamp(),
+    responseId: "",
     ...overrides
   };
 }
@@ -792,6 +829,7 @@ export function normalizeStoredState(raw: unknown): StoredState {
     lastScan: normalizeScanSummary(record.lastScan),
     lastFill: normalizeFillSummary(record.lastFill),
     lastResumeImport: normalizeResumeImportSummary(record.lastResumeImport),
+    lastAiVerification: normalizeAiVerificationSummary(record.lastAiVerification),
     debugMode: readBoolean(record.debugMode, fallbackState.debugMode),
     lastUpdatedAt: readString(
       record.lastUpdatedAt,
@@ -996,6 +1034,7 @@ function migrateLegacyState(record: Record<string, unknown>): StoredState {
     lastScan: normalizeScanSummary(record.lastScan),
     lastFill: null,
     lastResumeImport: null,
+    lastAiVerification: null,
     debugMode: readBoolean(record.debugMode, fallbackState.debugMode),
     lastUpdatedAt: migratedProfile.updatedAt
   };
@@ -1547,6 +1586,25 @@ function normalizeAiAssistSummary(raw: unknown): AiAssistSummary {
   };
 }
 
+function normalizeAiVerificationSummary(raw: unknown): AiVerificationSummary | null {
+  const record = asRecord(raw);
+
+  if (!record) {
+    return null;
+  }
+
+  const fallback = createDefaultAiVerificationSummary();
+
+  return {
+    configured: readBoolean(record.configured, fallback.configured),
+    model: readString(record.model, fallback.model),
+    status: normalizeAiVerificationStatus(record.status),
+    message: readString(record.message, fallback.message),
+    checkedAt: readString(record.checkedAt, fallback.checkedAt),
+    responseId: readString(record.responseId)
+  };
+}
+
 function normalizeAiFieldSuggestions(raw: unknown): AiFieldSuggestion[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -1567,6 +1625,21 @@ function normalizeAiFieldSuggestions(raw: unknown): AiFieldSuggestion[] {
       reason: readString(record?.reason)
     };
   });
+}
+
+function normalizeAiVerificationStatus(
+  value: unknown,
+  fallback: AiVerificationStatus = "unverified"
+): AiVerificationStatus {
+  switch (value) {
+    case "valid":
+    case "invalid":
+    case "error":
+    case "unverified":
+      return value;
+    default:
+      return fallback;
+  }
 }
 
 function normalizeFilledFieldResults(raw: unknown): FilledFieldResult[] {
