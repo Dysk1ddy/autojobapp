@@ -332,7 +332,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text", "combobox", "listbox"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.requiresSponsorship))
+      yesNoValueWithDefault(profile.workAuthorization.requiresSponsorship, "no")
   },
   {
     key: "workAuthorization.requiresFutureSponsorship",
@@ -351,7 +351,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text", "combobox", "listbox"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.requiresFutureSponsorship))
+      yesNoValueWithDefault(profile.workAuthorization.requiresFutureSponsorship, "no")
   },
   {
     key: "workAuthorization.willingToRelocate",
@@ -370,11 +370,15 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "protected veteran",
       "military veteran",
       "are you a veteran",
-      "voluntary self identification of veteran status"
+      "voluntary self identification of veteran status",
+      "categories of protected veterans",
+      "protected veterans listed above",
+      "government contractor subject to vevraa",
+      "vevraa"
     ],
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
-    getValue: (profile) => textValue(profile.workAuthorization.veteranStatus)
+    getValue: (profile) => veteranStatusValue(profile.workAuthorization.veteranStatus)
   },
   {
     key: "workAuthorization.disabilityStatus",
@@ -433,7 +437,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["select", "radio", "text"],
     getValue: (profile) =>
-      textValue(profile.workAuthorization.selfIdentificationLanguage)
+      textValue(profile.workAuthorization.selfIdentificationLanguage || "English")
   },
   {
     key: "workAuthorization.isAtLeast18",
@@ -473,7 +477,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.canVerifyLegalWorkRight))
+      yesNoValueWithDefault(profile.workAuthorization.canVerifyLegalWorkRight, "yes")
   },
   {
     key: "workAuthorization.terminationHistory",
@@ -487,7 +491,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.terminationHistory))
+      yesNoValueWithDefault(profile.workAuthorization.terminationHistory, "no")
   },
   {
     key: "workAuthorization.friendsOrRelativesAtCompany",
@@ -502,8 +506,9 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(
-        toSentenceCase(profile.workAuthorization.friendsOrRelativesAtCompany)
+      yesNoValueWithDefault(
+        profile.workAuthorization.friendsOrRelativesAtCompany,
+        "no"
       )
   },
   {
@@ -519,9 +524,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(
-        toSentenceCase(profile.workAuthorization.exportControlCitizenship)
-      )
+      yesNoValueWithDefault(profile.workAuthorization.exportControlCitizenship, "no")
   },
   {
     key: "workAuthorization.boardDirectorPlans",
@@ -535,7 +538,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.boardDirectorPlans))
+      yesNoValueWithDefault(profile.workAuthorization.boardDirectorPlans, "no")
   },
   {
     key: "workAuthorization.availabilityDate",
@@ -553,7 +556,8 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     ],
     preferredTags: ["select", "input", "textarea"],
     preferredInputTypes: ["radio", "checkbox", "select", "text", "textarea", "combobox", "listbox"],
-    getValue: (profile) => textValue(profile.workAuthorization.availabilityDate)
+    getValue: (profile) =>
+      textValue(profile.workAuthorization.availabilityDate || "Immediately")
   },
   {
     key: "documents.resume",
@@ -982,6 +986,30 @@ function textValue(value: string | undefined): ResolvedProfileValue {
     preview: truncatePreview(nextValue),
     hasValue: Boolean(nextValue)
   };
+}
+
+function yesNoValueWithDefault(
+  value: "yes" | "no" | "unknown",
+  fallback: "yes" | "no"
+): ResolvedProfileValue {
+  return textValue(toSentenceCase(value === "unknown" ? fallback : value));
+}
+
+function veteranStatusValue(value: string | undefined): ResolvedProfileValue {
+  const normalized = normalizeText(value ?? "");
+
+  if (
+    !normalized ||
+    normalized === "prefer not to say" ||
+    normalized === "prefer not to answer" ||
+    normalized === "prefer not to self identify" ||
+    normalized === "i dont wish to answer" ||
+    normalized === "i do not wish to answer"
+  ) {
+    return textValue("I am not a veteran");
+  }
+
+  return textValue(value);
 }
 
 function listValue(values: string[] | undefined): ResolvedProfileValue {

@@ -1269,6 +1269,39 @@ describe("fillPage", () => {
           </select>
         </label>
         <label>
+          Veteran Status
+          <select name="veteran_status">
+            <option value="">Select</option>
+            <option value="not-veteran">I am not a veteran</option>
+            <option value="protected-veteran">I identify as one or more classifications of protected veteran</option>
+            <option value="decline">I do not wish to answer</option>
+          </select>
+        </label>
+        <label>
+          When would you be available if an offer was accepted?
+          <select name="offer_availability">
+            <option value="">Select</option>
+            <option value="immediate">Immediately</option>
+            <option value="two-weeks">2 weeks after offer</option>
+          </select>
+        </label>
+        <label>
+          Will you now or in the future require sponsorship for an immigration-related employment benefit?
+          <select name="immigration_sponsorship">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
+          Have you applied on any previous occasions for employment in any capacity with Micron?
+          <select name="previous_micron_application">
+            <option value="">Select</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+          </select>
+        </label>
+        <label>
           Are you at least 18 years old?
           <select name="age_requirement">
             <option value="">Select</option>
@@ -1320,13 +1353,6 @@ describe("fillPage", () => {
     `;
 
     const profile = createDefaultApplicantProfile();
-    profile.workAuthorization.selfIdentificationLanguage = "English";
-    profile.workAuthorization.isAtLeast18 = "yes";
-    profile.workAuthorization.canVerifyLegalWorkRight = "yes";
-    profile.workAuthorization.terminationHistory = "no";
-    profile.workAuthorization.friendsOrRelativesAtCompany = "no";
-    profile.workAuthorization.exportControlCitizenship = "no";
-    profile.workAuthorization.boardDirectorPlans = "no";
 
     const result = await fillPage(profile, {
       href: "https://jobs.example.com/apply/micron-screening",
@@ -1338,6 +1364,24 @@ describe("fillPage", () => {
         'select[name="self_identification_language"]'
       ) as HTMLSelectElement).value
     ).toBe("en");
+    expect(
+      (document.querySelector('select[name="veteran_status"]') as HTMLSelectElement)
+        .value
+    ).toBe("not-veteran");
+    expect(
+      (document.querySelector('select[name="offer_availability"]') as HTMLSelectElement)
+        .value
+    ).toBe("immediate");
+    expect(
+      (document.querySelector(
+        'select[name="immigration_sponsorship"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
+    expect(
+      (document.querySelector(
+        'select[name="previous_micron_application"]'
+      ) as HTMLSelectElement).value
+    ).toBe("N");
     expect(
       (document.querySelector('select[name="age_requirement"]') as HTMLSelectElement)
         .value
@@ -1367,7 +1411,85 @@ describe("fillPage", () => {
         'select[name="board_of_directors"]'
       ) as HTMLSelectElement).value
     ).toBe("N");
-    expect(result.fill.filled).toBeGreaterThanOrEqual(7);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(11);
+  });
+
+  it("fills custom Micron-style dropdowns with plain option elements", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="veteran-label" for="veteran-combobox">
+          Veteran Status
+          If you believe you belong to any of the categories of protected veterans listed above, please indicate by selecting the appropriate box below.
+        </label>
+        <input
+          id="veteran-combobox"
+          type="text"
+          aria-labelledby="veteran-label"
+          aria-controls="veteran-options"
+          aria-expanded="false"
+          placeholder="Select"
+          value="Select"
+        />
+        <ul id="veteran-options" hidden>
+          <li data-value="decline">I do not wish to answer</li>
+          <li data-value="not-veteran">I am not a veteran</li>
+          <li data-value="protected-veteran">I identify as one or more classifications of protected veteran</li>
+        </ul>
+
+        <label id="language-label" for="language-combobox">
+          Self Identification Language
+        </label>
+        <input
+          id="language-combobox"
+          type="text"
+          aria-labelledby="language-label"
+          aria-controls="language-options"
+          aria-expanded="false"
+          placeholder="Select"
+          value="Select"
+        />
+        <div id="language-options" hidden>
+          <button type="button" data-value="es">Spanish</button>
+          <button type="button" data-value="en">English</button>
+        </div>
+      </form>
+    `;
+
+    const registerPlainCombobox = (inputId: string, optionsId: string) => {
+      const input = document.getElementById(inputId) as HTMLInputElement;
+      const options = document.getElementById(optionsId) as HTMLElement;
+
+      input.addEventListener("click", () => {
+        input.setAttribute("aria-expanded", "true");
+        options.hidden = false;
+      });
+
+      Array.from(options.children).forEach((option) => {
+        option.addEventListener("click", () => {
+          input.value = option.textContent?.trim() ?? "";
+          input.dataset.committed = "true";
+          input.setAttribute("aria-expanded", "false");
+          options.hidden = true;
+        });
+      });
+    };
+
+    registerPlainCombobox("veteran-combobox", "veteran-options");
+    registerPlainCombobox("language-combobox", "language-options");
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/micron-custom-dropdowns",
+      title: "Micron Custom Dropdowns"
+    });
+
+    expect((document.getElementById("veteran-combobox") as HTMLInputElement).value).toBe(
+      "I am not a veteran"
+    );
+    expect((document.getElementById("language-combobox") as HTMLInputElement).value).toBe(
+      "English"
+    );
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
   });
 
   it("answers age eligibility radio and text questions with yes", async () => {
@@ -1672,6 +1794,51 @@ describe("fillPage", () => {
     expect(sawChange).toBe(true);
     expect(sawDrop).toBe(true);
     expect(result.fill.results[0]?.action).toBe("filled");
+  });
+
+  it("uploads a saved resume when a hidden file input is paired with a detached resume dropzone", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div style="display: none;">
+          <input type="file" name="file" accept=".pdf,.doc,.docx" />
+        </div>
+        <div class="resume-dropzone" data-testid="resume-upload-target">
+          <strong>Resume/CV upload</strong>
+          <button type="button">Choose file</button>
+        </div>
+      </form>
+    `;
+
+    const dropzone = document.querySelector(".resume-dropzone") as HTMLDivElement;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    let sawDrop = false;
+
+    dropzone.addEventListener("drop", (event) => {
+      const maybeTransfer = (event as DragEvent & { dataTransfer?: DataTransfer }).dataTransfer;
+      sawDrop = (maybeTransfer?.files?.length ?? 0) > 0;
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.documents.resume = {
+      id: "resume-3",
+      name: "Resume PDF",
+      fileName: "resume.pdf",
+      mimeType: "application/pdf",
+      source: "local",
+      sizeBytes: 12,
+      dataBase64: "cmVzdW1lIGRhdGE=",
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/resume-detached-dropzone",
+      title: "Detached Resume Dropzone"
+    });
+
+    expect(input.files?.length).toBe(1);
+    expect(input.files?.[0]?.name).toBe("resume.pdf");
+    expect(sawDrop).toBe(true);
+    expect(result.fill.results.some((field) => field.action === "filled")).toBe(true);
   });
 });
 

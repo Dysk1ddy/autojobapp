@@ -914,7 +914,16 @@ function fillFileUploadGroup(
     );
   }
 
-  if (!looksLikeResumeUpload(group.candidate)) {
+  const uploadCandidate = buildFileUploadCandidate(primaryElement, group.candidate);
+  const fallbackAllowed =
+    queryAllDocuments<HTMLInputElement>("input[type='file']").length === 1 &&
+    shouldUseSingleResumeFileInputFallback([primaryElement], group.candidate);
+
+  if (
+    !fallbackAllowed &&
+    !isLikelyResumeUploadInput(primaryElement, group.candidate) &&
+    !looksLikeResumeUpload(uploadCandidate)
+  ) {
     return buildResult(
       match,
       "skipped",
@@ -1962,6 +1971,14 @@ async function performVerifiedFill(
     const applied = await apply();
     changed = changed || applied;
 
+    if (verify()) {
+      return {
+        changed,
+        verified: true,
+        failureMessage: ""
+      };
+    }
+
     if (!applied && !verify()) {
       return {
         changed,
@@ -2391,7 +2408,10 @@ function getCustomOptionTokens(option: HTMLElement): string[] {
   return [
     option.textContent,
     option.getAttribute("aria-label"),
-    option.getAttribute("data-value")
+    option.getAttribute("data-value"),
+    option.getAttribute("data-label"),
+    option.getAttribute("value"),
+    option.getAttribute("title")
   ]
     .map((value) => normalizeText(cleanText(value)))
     .filter(Boolean);
@@ -2625,6 +2645,34 @@ function getFileUploadEventTargets(element: HTMLInputElement): HTMLElement[] {
     depth += 1;
   }
 
+  const scope = element.closest("form") ?? document.body;
+
+  if (scope) {
+    targets.push(
+      ...Array.from(
+        scope.querySelectorAll<HTMLElement>(
+          [
+            "label",
+            "button",
+            "[role='button']",
+            "[data-testid]",
+            "[data-qa]",
+            "[data-automation-id]",
+            "[aria-label]",
+            "[class]"
+          ].join(", ")
+        )
+      )
+        .filter(
+          (target) =>
+            target !== element &&
+            isVisibleElement(target) &&
+            looksLikeResumeUploadText(getElementDescriptorText(target))
+        )
+        .slice(0, 8)
+    );
+  }
+
   return dedupeElements(targets);
 }
 
@@ -2633,15 +2681,30 @@ function findResumeUploadInput(group: CandidateGroup): HTMLInputElement | null {
   const inGroup = currentElements.filter(isFileInput);
 
   if (inGroup.length > 0) {
-    return chooseBestResumeUploadInput(inGroup, group.candidate);
+    const resumeLikeInGroup = inGroup.filter((input) =>
+      isLikelyResumeUploadInput(input, group.candidate)
+    );
+
+    return chooseBestResumeUploadInput(
+      resumeLikeInGroup.length > 0 ? resumeLikeInGroup : inGroup,
+      group.candidate
+    );
   }
 
   const allFileInputs = queryAllDocuments<HTMLInputElement>("input[type='file']");
   const resumeLikeInputs = allFileInputs.filter((input) =>
-    looksLikeResumeUpload(buildFileUploadCandidate(input, group.candidate))
+    isLikelyResumeUploadInput(input, group.candidate)
   );
 
-  return chooseBestResumeUploadInput(resumeLikeInputs, group.candidate);
+  if (resumeLikeInputs.length > 0) {
+    return chooseBestResumeUploadInput(resumeLikeInputs, group.candidate);
+  }
+
+  if (shouldUseSingleResumeFileInputFallback(allFileInputs, group.candidate)) {
+    return chooseBestResumeUploadInput(allFileInputs, group.candidate);
+  }
+
+  return null;
 }
 
 function chooseBestResumeUploadInput(
@@ -2654,26 +2717,39 @@ function chooseBestResumeUploadInput(
 
   const scored = inputs.map((input) => {
     const inputCandidate = buildFileUploadCandidate(input, candidate);
+    const accept = normalizeText(input.accept);
     const text = normalizeText(
       [
         inputCandidate.label,
         inputCandidate.name,
         inputCandidate.elementId,
+        inputCandidate.placeholder,
+        inputCandidate.ariaLabel,
         inputCandidate.nearbyText,
         inputCandidate.sectionHeading,
-        inputCandidate.selectorHint
+        inputCandidate.selectorHint,
+        inputCandidate.autocomplete,
+        input.getAttribute("data-testid"),
+        input.getAttribute("data-qa"),
+        input.getAttribute("data-automation-id")
       ].join(" ")
     );
 
     let score = 0;
-    if (text.includes("resume")) {
-      score += 4;
+    if (hasResumeUploadSignal(text)) {
+      score += 6;
     }
-    if (text.includes("upload")) {
+    if (hasUploadInteractionSignal(text)) {
       score += 2;
     }
-    if (text.includes("cover letter")) {
-      score -= 5;
+    if (accept.includes("pdf") || accept.includes("doc")) {
+      score += 1;
+    }
+    if (looksLikeResumeUpload(candidate)) {
+      score += 2;
+    }
+    if (hasCoverLetterSignal(text)) {
+      score -= 8;
     }
     if (input.files?.length) {
       score -= 3;
@@ -2706,6 +2782,21 @@ function buildFileUploadCandidate(
     optionLabels: [],
     adapterSignals: []
   };
+}
+
+function isLikelyResumeUploadInput(
+  input: HTMLInputElement,
+  fallback: FieldScanCandidate
+): boolean {
+  const inputCandidate = buildFileUploadCandidate(input, fallback);
+
+  return (
+    looksLikeResumeUpload(inputCandidate) ||
+    looksLikeResumeUpload(fallback) ||
+    getFileUploadEventTargets(input).some((target) =>
+      looksLikeResumeUploadText(getElementDescriptorText(target))
+    )
+  );
 }
 
 function createStoredDocumentFile(
@@ -2742,17 +2833,79 @@ function looksLikeResumeUpload(candidate: FieldScanCandidate): boolean {
     ].join(" ")
   );
 
+  return looksLikeResumeUploadText(searchable);
+}
+
+function looksLikeResumeUploadText(searchable: string): boolean {
+  const normalized = normalizeText(cleanText(searchable));
+
+  if (!normalized) {
+    return false;
+  }
+
+  return hasResumeUploadSignal(normalized) && !hasCoverLetterSignal(normalized);
+}
+
+function hasResumeUploadSignal(searchable: string): boolean {
   if (!searchable) {
     return false;
   }
 
-  const hasResumeSignal =
+  return (
     searchable.includes("resume") ||
     searchable.includes("curriculum vitae") ||
-    /\bcv\b/.test(searchable);
-  const hasCoverLetterSignal = searchable.includes("cover letter");
+    /\bcv\b/.test(searchable)
+  );
+}
 
-  return hasResumeSignal && !hasCoverLetterSignal;
+function hasCoverLetterSignal(searchable: string): boolean {
+  return searchable.includes("cover letter") || searchable.includes("coverletter");
+}
+
+function hasUploadInteractionSignal(searchable: string): boolean {
+  return (
+    searchable.includes("upload") ||
+    searchable.includes("attach") ||
+    searchable.includes("browse") ||
+    searchable.includes("choose file") ||
+    searchable.includes("drop")
+  );
+}
+
+function shouldUseSingleResumeFileInputFallback(
+  inputs: HTMLInputElement[],
+  candidate: FieldScanCandidate
+): boolean {
+  if (inputs.length !== 1) {
+    return false;
+  }
+
+  if (looksLikeResumeUpload(candidate)) {
+    return true;
+  }
+
+  const bodyText = normalizeText(cleanText(document.body?.textContent ?? ""));
+
+  return (
+    hasResumeUploadSignal(bodyText) &&
+    hasUploadInteractionSignal(bodyText) &&
+    !hasCoverLetterSignal(bodyText)
+  );
+}
+
+function getElementDescriptorText(element: HTMLElement): string {
+  return [
+    element.textContent,
+    element.getAttribute("aria-label"),
+    element.getAttribute("title"),
+    element.getAttribute("data-testid"),
+    element.getAttribute("data-qa"),
+    element.getAttribute("data-automation-id"),
+    element.getAttribute("class")
+  ]
+    .map((value) => cleanText(value))
+    .filter(Boolean)
+    .join(" ");
 }
 
 function fileNamesPreview(files: FileList | null): string {
@@ -2909,6 +3062,22 @@ function expandNormalizedNeedles(primaryNeedle: string): string[] {
 
   if (primaryNeedle === "prefer not to self-identify") {
     needles.push("prefer not to self identify");
+  }
+
+  if (
+    primaryNeedle === "i am not a veteran" ||
+    primaryNeedle === "not a veteran" ||
+    primaryNeedle === "not protected veteran"
+  ) {
+    needles.push(
+      "i am not a veteran",
+      "not a veteran",
+      "i am not a protected veteran",
+      "not a protected veteran",
+      "i do not identify as a protected veteran",
+      "i dont identify as a protected veteran",
+      "no veteran status"
+    );
   }
 
   return dedupeStrings(needles);
@@ -3714,14 +3883,14 @@ function waitForFieldSettle(field: HTMLElement, delayMs = FILL_SETTLE_DELAY_MS):
 }
 
 function getAssociatedOptionElements(field: HTMLElement): HTMLElement[] {
-  const containers: HTMLElement[] = [];
+  const localContainers: HTMLElement[] = [];
   const associatedByReference = [
     ...resolveAriaReferenceElements(field, "aria-controls"),
     ...resolveAriaReferenceElements(field, "aria-owns")
   ].filter((element): element is HTMLElement => element instanceof HTMLElement);
 
   if (getNormalizedRole(field) === "listbox") {
-    containers.push(field);
+    localContainers.push(field);
   }
 
   const nearbyListbox = field.closest(
@@ -3729,25 +3898,89 @@ function getAssociatedOptionElements(field: HTMLElement): HTMLElement[] {
   )?.querySelector<HTMLElement>("[role='listbox']");
 
   if (nearbyListbox) {
-    containers.push(nearbyListbox);
+    localContainers.push(nearbyListbox);
   }
 
-  containers.push(...associatedByReference);
+  localContainers.push(...associatedByReference);
 
-  if (field.getAttribute("aria-expanded") === "true") {
-    containers.push(
-      ...queryAllDocuments<HTMLElement>("[role='listbox']").filter(isVisibleElement)
-    );
+  const localOptions = collectOptionElementsFromContainers(localContainers);
+
+  if (localOptions.length > 0 || field.getAttribute("aria-expanded") !== "true") {
+    return localOptions;
   }
 
+  const expandedPortalContainers = queryAllDocuments<HTMLElement>(
+    [
+      "[role='listbox']",
+      "[role='menu']",
+      "[data-testid*='listbox']",
+      "[data-testid*='dropdown']",
+      "[data-testid*='menu']",
+      "[class*='listbox']",
+      "[class*='dropdown']",
+      "[class*='select-menu']",
+      "[class*='popover']"
+    ].join(", ")
+  ).filter(isVisibleElement);
+
+  return collectOptionElementsFromContainers(expandedPortalContainers);
+}
+
+function collectOptionElementsFromContainers(containers: HTMLElement[]): HTMLElement[] {
   return dedupeElements(
     containers
-      .flatMap((container) =>
-        Array.from(
-          container.querySelectorAll<HTMLElement>("[role='option'], [role='radio']")
-        )
-      )
+      .flatMap((container) => getPotentialOptionElements(container))
       .filter((option) => option.isConnected && !option.closest("[hidden], [aria-hidden='true']"))
+  );
+}
+
+function getPotentialOptionElements(container: HTMLElement): HTMLElement[] {
+  const explicitOptions = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      [
+        "[role='option']",
+        "[role='radio']",
+        "[role='menuitem']",
+        "[data-value]",
+        "[data-option]",
+        "[data-testid*='option']",
+        "[class*='option']",
+        "button",
+        "li"
+      ].join(", ")
+    )
+  );
+  const directChildren = Array.from(container.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement && Boolean(cleanText(child.textContent))
+  );
+  const candidates = dedupeElements([...explicitOptions, ...directChildren]);
+
+  return candidates.filter(
+    (element) =>
+      element !== container &&
+      isVisibleElement(element) &&
+      !containsPreferredOptionCandidate(element, candidates)
+  );
+}
+
+function containsPreferredOptionCandidate(
+  element: HTMLElement,
+  candidates: HTMLElement[]
+): boolean {
+  return candidates.some(
+    (candidate) =>
+      candidate !== element &&
+      element.contains(candidate) &&
+      isPreferredOptionCandidate(candidate)
+  );
+}
+
+function isPreferredOptionCandidate(element: HTMLElement): boolean {
+  return (
+    element.matches("button, [role='option'], [role='radio'], [role='menuitem']") ||
+    element.hasAttribute("data-value") ||
+    element.hasAttribute("data-option")
   );
 }
 

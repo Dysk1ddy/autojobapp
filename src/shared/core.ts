@@ -464,7 +464,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -489,7 +489,7 @@ export function createDefaultState(): StoredState {
 
 export function createDefaultSettings(): ExtensionSettings {
   return {
-    darkMode: false,
+    darkMode: true,
     fillMode: "neutral",
     autoSubmit: false,
     fullyAutoEnabled: false,
@@ -651,18 +651,18 @@ export function createDefaultApplicantProfile(
       requiresFutureSponsorship: "no",
       willingToRelocate: "case-by-case",
       remoteWorkPreference: "Hybrid or remote",
-      veteranStatus: "Prefer not to say",
+      veteranStatus: "I am not a veteran",
       disabilityStatus: "Prefer not to say",
       gender: "Prefer not to self-identify",
       ethnicity: "Prefer not to self-identify",
-      selfIdentificationLanguage: "",
+      selfIdentificationLanguage: "English",
       isAtLeast18: "yes",
-      canVerifyLegalWorkRight: "unknown",
-      terminationHistory: "unknown",
-      friendsOrRelativesAtCompany: "unknown",
-      exportControlCitizenship: "unknown",
-      boardDirectorPlans: "unknown",
-      availabilityDate: "",
+      canVerifyLegalWorkRight: "yes",
+      terminationHistory: "no",
+      friendsOrRelativesAtCompany: "no",
+      exportControlCitizenship: "no",
+      boardDirectorPlans: "no",
+      availabilityDate: "Immediately",
       clearanceStatus: "None"
     },
     documents: {
@@ -1375,17 +1375,19 @@ function normalizeWorkAuthorization(
       record?.remoteWorkPreference,
       fallback.remoteWorkPreference
     ),
-    veteranStatus: readString(record?.veteranStatus, fallback.veteranStatus),
+    veteranStatus: normalizeVeteranStatus(
+      readString(record?.veteranStatus, fallback.veteranStatus),
+      fallback.veteranStatus
+    ),
     disabilityStatus: readString(
       record?.disabilityStatus,
       fallback.disabilityStatus
     ),
     gender: readString(record?.gender, fallback.gender),
     ethnicity: readString(record?.ethnicity, fallback.ethnicity),
-    selfIdentificationLanguage: readString(
-      record?.selfIdentificationLanguage,
-      fallback.selfIdentificationLanguage
-    ),
+    selfIdentificationLanguage:
+      readString(record?.selfIdentificationLanguage, fallback.selfIdentificationLanguage) ||
+      fallback.selfIdentificationLanguage,
     isAtLeast18: normalizeYesNoUnknown(
       record?.isAtLeast18,
       fallback.isAtLeast18
@@ -1410,10 +1412,9 @@ function normalizeWorkAuthorization(
       record?.boardDirectorPlans,
       fallback.boardDirectorPlans
     ),
-    availabilityDate: readString(
-      record?.availabilityDate,
-      fallback.availabilityDate
-    ),
+    availabilityDate:
+      readString(record?.availabilityDate, fallback.availabilityDate) ||
+      fallback.availabilityDate,
     clearanceStatus: readString(
       record?.clearanceStatus,
       fallback.clearanceStatus
@@ -1809,6 +1810,21 @@ function normalizeYesNoUnknown(
   return value === "yes" || value === "no" || value === "unknown"
     ? value
     : fallback;
+}
+
+function normalizeVeteranStatus(value: string, fallback: string): string {
+  const normalized = value.toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+
+  if (
+    !normalized ||
+    normalized === "prefer not to say" ||
+    normalized === "prefer not to answer" ||
+    normalized === "prefer not to self identify"
+  ) {
+    return fallback;
+  }
+
+  return value;
 }
 
 function normalizeRelocationPreference(

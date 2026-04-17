@@ -28,7 +28,7 @@ describe("shouldFillConfidence", () => {
   });
 
   it("keeps the fully auto AI override off by default", () => {
-    expect(createDefaultSettings().darkMode).toBe(false);
+    expect(createDefaultSettings().darkMode).toBe(true);
     expect(createDefaultSettings().fullyAutoEnabled).toBe(false);
     expect(createDefaultSettings().aiAssistScope).toBe("focused");
     expect(createDefaultSettings().aiPreferGeneratedValues).toBe(false);
@@ -93,8 +93,10 @@ describe("shouldFillConfidence", () => {
       createDefaultApplicantProfile()
     );
 
-    expect(fallback.workAuthorization.selfIdentificationLanguage).toBe("");
+    expect(fallback.workAuthorization.selfIdentificationLanguage).toBe("English");
     expect(fallback.workAuthorization.isAtLeast18).toBe("yes");
+    expect(fallback.workAuthorization.veteranStatus).toBe("I am not a veteran");
+    expect(fallback.workAuthorization.availabilityDate).toBe("Immediately");
     expect(imported.workAuthorization.selfIdentificationLanguage).toBe("English");
     expect(imported.workAuthorization.canVerifyLegalWorkRight).toBe("yes");
     expect(imported.workAuthorization.boardDirectorPlans).toBe("no");
