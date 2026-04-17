@@ -25,6 +25,7 @@ body,
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -33,6 +34,7 @@ body {
     radial-gradient(circle at top right, #d8efe8 0%, transparent 35%),
     linear-gradient(180deg, var(--bg) 0%, #f4eee4 100%);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 button,
@@ -53,9 +55,11 @@ select {
 }
 
 .options-shell {
+  width: min(100%, 1320px);
   max-width: 1320px;
   margin: 0 auto;
   padding-block: 28px 40px;
+  overflow-x: clip;
 }
 
 .options-workspace {
@@ -74,12 +78,32 @@ select {
 .options-sidebar {
   position: sticky;
   top: 18px;
+  align-self: start;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .options-sidebar-summary {
   grid-template-columns: 1fr;
   margin-top: 0;
   margin-bottom: 16px;
+}
+
+.options-sidebar-summary > div {
+  min-width: 0;
+}
+
+.options-sidebar-summary strong,
+.options-sidebar-summary .mini-label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.options-sidebar-summary strong {
+  font-size: 1rem;
+  line-height: 1.25;
 }
 
 .options-sidebar-nav {
@@ -89,6 +113,7 @@ select {
 
 .options-sidebar-link {
   display: block;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -97,6 +122,7 @@ select {
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -573,6 +599,7 @@ select {
 
   .options-sidebar {
     position: static;
+    max-height: none;
   }
 
   .options-sidebar-summary {

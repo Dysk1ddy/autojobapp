@@ -531,6 +531,71 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(2);
   });
 
+  it("waits for async input-based combobox options before applying the no policy", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <label id="export-label" for="export-control-combobox">
+            All Micron sites must observe U.S. export control rules. Are you a citizen of, or do you hold dual citizenship with any of these countries?
+          </label>
+          <input
+            id="export-control-combobox"
+            type="text"
+            role="combobox"
+            aria-labelledby="export-label"
+            aria-controls="export-control-options"
+            aria-expanded="false"
+            placeholder="Select"
+            value="Select"
+          />
+          <ul id="export-control-options" role="listbox" hidden></ul>
+        </fieldset>
+      </form>
+    `;
+
+    const input = document.getElementById("export-control-combobox") as HTMLInputElement;
+    const list = document.getElementById("export-control-options") as HTMLUListElement;
+
+    input.addEventListener("click", () => {
+      input.setAttribute("aria-expanded", "true");
+      window.setTimeout(() => {
+        list.hidden = false;
+        list.innerHTML = `
+          <li role="presentation"><button type="button" role="option">Unknown</button></li>
+          <li role="presentation"><button type="button" role="option">Yes</button></li>
+          <li role="presentation"><button type="button" role="option">No</button></li>
+        `;
+
+        Array.from(list.querySelectorAll<HTMLButtonElement>("[role='option']")).forEach(
+          (option) => {
+            option.addEventListener("click", () => {
+              input.dataset.committed = "true";
+              input.value = option.textContent?.trim() ?? "";
+              list.hidden = true;
+              input.setAttribute("aria-expanded", "false");
+            });
+          }
+        );
+      }, 70);
+    });
+    input.addEventListener("blur", () => {
+      if (input.dataset.committed !== "true") {
+        input.value = "Select";
+      }
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.exportControlCitizenship = "unknown";
+
+    const result = await fillPage(profile, {
+      href: "https://careers.micron.com/careers/apply?pid=39953835",
+      title: "Micron Async Combobox"
+    });
+
+    expect(input.value).toBe("No");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("fills a single affirmative checkbox from a yes/no profile value", async () => {
     document.body.innerHTML = `
       <form>

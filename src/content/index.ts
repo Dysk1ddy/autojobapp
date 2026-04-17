@@ -1305,7 +1305,7 @@ async function fillCustomSelectionControl(
 
   return performVerifiedFill(
     group,
-    () => {
+    async () => {
       const element = resolvePrimaryElement(group);
 
       if (!element || !isCustomSelectionControl(element)) {
@@ -1323,14 +1323,27 @@ async function fillCustomSelectionControl(
       }
 
       openCustomSelectionControl(element);
+      await waitForDomUpdate(120);
 
-      const option = findMatchingCustomOption(element, normalizedValues);
+      let option = findMatchingCustomOption(element, normalizedValues);
+
+      if (!option && targetValue && isTextFillControl(element)) {
+        element.focus();
+        setTextControlValue(element, targetValue);
+        dispatchEvents(element, ["input", "change"]);
+        dispatchKeyboardEvent(element, "ArrowDown");
+        await waitForDomUpdate(160);
+        option = findMatchingCustomOption(element, normalizedValues);
+      }
 
       if (option) {
-        option.focus();
-        option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-        option.click();
-        dispatchEvents(option, ["input", "change", "blur"]);
+        activateCustomOption(element, option);
+        await waitForDomUpdate(120);
+
+        if (!doesCustomSelectionMatchValue(element, resolvedValue)) {
+          commitCustomSelectionFallback(element, option, targetValue);
+        }
+
         highlightFilledElement(element);
         highlightFilledElement(option);
         return true;
@@ -1344,6 +1357,7 @@ async function fillCustomSelectionControl(
       setTextControlValue(element, targetValue);
       dispatchEvents(element, ["input", "change"]);
       dispatchKeyboardEvent(element, "ArrowDown");
+      await waitForDomUpdate(80);
       dispatchKeyboardEvent(element, "Enter");
       dispatchEvents(element, ["blur"]);
       highlightFilledElement(element);
@@ -1869,7 +1883,7 @@ function getChoiceGroupElements(field: ChoiceControl): ChoiceControl[] {
 
 async function performVerifiedFill(
   group: CandidateGroup,
-  apply: () => boolean,
+  apply: () => boolean | Promise<boolean>,
   verify: () => boolean,
   messages: {
     noMatchMessage: string;
@@ -1887,7 +1901,7 @@ async function performVerifiedFill(
   let changed = false;
 
   for (let attempt = 0; attempt < FILL_VERIFICATION_MAX_ATTEMPTS; attempt += 1) {
-    const applied = apply();
+    const applied = await apply();
     changed = changed || applied;
 
     if (!applied && !verify()) {
@@ -2281,6 +2295,78 @@ function findMatchingCustomOption(
         tokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
       );
     }) ?? null
+  );
+}
+
+function activateCustomOption(control: HTMLElement, option: HTMLElement): void {
+  option.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  option.focus();
+  dispatchPointerLikeEvent(option, "pointerdown");
+  option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  dispatchPointerLikeEvent(option, "pointerup");
+  option.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  option.click();
+  dispatchEvents(option, ["input", "change"]);
+  dispatchEvents(control, ["input", "change"]);
+}
+
+function commitCustomSelectionFallback(
+  control: HTMLElement,
+  option: HTMLElement,
+  targetValue: string
+): void {
+  const optionText = cleanText(
+    option.textContent || option.getAttribute("aria-label") || targetValue
+  );
+  const value = optionText || targetValue;
+
+  if (!value) {
+    return;
+  }
+
+  getAssociatedOptionElements(control).forEach((candidate) => {
+    const selected = candidate === option;
+
+    if (candidate.hasAttribute("aria-selected")) {
+      candidate.setAttribute("aria-selected", selected ? "true" : "false");
+    }
+
+    if (candidate.hasAttribute("aria-checked")) {
+      candidate.setAttribute("aria-checked", selected ? "true" : "false");
+    }
+
+    if (candidate.hasAttribute("data-selected")) {
+      candidate.setAttribute("data-selected", selected ? "true" : "false");
+    }
+  });
+
+  if (option.id) {
+    control.setAttribute("aria-activedescendant", option.id);
+  }
+
+  control.setAttribute("aria-valuetext", value);
+  control.setAttribute("data-value", value);
+
+  if (isTextFillControl(control as FormControl)) {
+    setTextControlValue(control as FormControl, value);
+  }
+
+  dispatchEvents(control, ["input", "change", "blur"]);
+}
+
+function dispatchPointerLikeEvent(element: HTMLElement, type: string): void {
+  if (typeof PointerEvent === "undefined") {
+    return;
+  }
+
+  element.dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true
+    })
   );
 }
 
