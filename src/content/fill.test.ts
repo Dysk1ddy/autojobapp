@@ -414,6 +414,123 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills input-based combobox dropdowns like Micron screening questions", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <label id="board-directors-label" for="board-directors-combobox">
+            Do you have any plans to join the board of directors of a for-profit company prior to starting a job with Micron?
+          </label>
+          <div class="select-wrapper">
+            <input
+              id="board-directors-combobox"
+              type="text"
+              role="combobox"
+              aria-labelledby="board-directors-label"
+              aria-controls="board-directors-options"
+              aria-expanded="false"
+              placeholder="Select"
+              value=""
+            />
+          </div>
+          <ul id="board-directors-options" role="listbox" hidden>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">Unknown</button>
+            </li>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">Yes</button>
+            </li>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">No</button>
+            </li>
+          </ul>
+        </fieldset>
+        <fieldset>
+          <label id="legal-right-label" for="legal-right-combobox">
+            If employment is offered, can you submit verification of your legal right to work at a Micron affiliated company in the country to which you have applied?
+          </label>
+          <div class="select-wrapper">
+            <input
+              id="legal-right-combobox"
+              type="text"
+              role="combobox"
+              aria-labelledby="legal-right-label"
+              aria-controls="legal-right-options"
+              aria-expanded="false"
+              placeholder="Select"
+              value=""
+            />
+          </div>
+          <ul id="legal-right-options" role="listbox" hidden>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">Unknown</button>
+            </li>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">Yes</button>
+            </li>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">No</button>
+            </li>
+          </ul>
+        </fieldset>
+      </form>
+    `;
+
+    const registerCombobox = (inputId: string, listId: string) => {
+      const input = document.getElementById(inputId) as HTMLInputElement;
+      const list = document.getElementById(listId) as HTMLUListElement;
+      const options = Array.from(
+        list.querySelectorAll<HTMLButtonElement>('[role="option"]')
+      );
+
+      const open = () => {
+        input.setAttribute("aria-expanded", "true");
+        list.hidden = false;
+      };
+
+      const close = () => {
+        input.setAttribute("aria-expanded", "false");
+        list.hidden = true;
+      };
+
+      input.addEventListener("click", open);
+      input.addEventListener("keydown", open);
+      options.forEach((option) => {
+        option.addEventListener("click", () => {
+          options.forEach((candidate) => {
+            candidate.setAttribute(
+              "aria-selected",
+              candidate === option ? "true" : "false"
+            );
+          });
+          input.value = option.textContent?.trim() ?? "";
+          input.setAttribute("aria-activedescendant", option.id || "");
+          close();
+        });
+      });
+    };
+
+    registerCombobox("board-directors-combobox", "board-directors-options");
+    registerCombobox("legal-right-combobox", "legal-right-options");
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.boardDirectorPlans = "unknown";
+    profile.workAuthorization.canVerifyLegalWorkRight = "unknown";
+
+    const result = await fillPage(profile, {
+      href: "https://careers.micron.com/careers/apply?pid=39953835",
+      title: "Micron Screening"
+    });
+
+    expect(
+      (document.getElementById("board-directors-combobox") as HTMLInputElement).value
+    ).toBe("No");
+    expect(
+      (document.getElementById("legal-right-combobox") as HTMLInputElement).value
+    ).toBe("Yes");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
   it("fills a single affirmative checkbox from a yes/no profile value", async () => {
     document.body.innerHTML = `
       <form>

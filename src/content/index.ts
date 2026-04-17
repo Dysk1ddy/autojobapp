@@ -3133,6 +3133,12 @@ function getFieldElementTag(field: FormControl): FieldElementTag {
 }
 
 function detectFieldInputType(field: FormControl): string {
+  const selectionRole = getSelectionControlRole(field);
+
+  if (selectionRole) {
+    return selectionRole;
+  }
+
   if (field instanceof HTMLInputElement) {
     return field.type.toLowerCase() || "text";
   }
@@ -3227,10 +3233,8 @@ function isCustomTextControl(field: HTMLElement): field is CustomFormControl {
 function isCustomSelectionControl(field: HTMLElement): field is CustomFormControl {
   return (
     field instanceof HTMLElement &&
-    !(field instanceof HTMLInputElement) &&
-    !(field instanceof HTMLTextAreaElement) &&
     !(field instanceof HTMLSelectElement) &&
-    (getNormalizedRole(field) === "combobox" || getNormalizedRole(field) === "listbox")
+    Boolean(getSelectionControlRole(field))
   );
 }
 
@@ -3258,6 +3262,26 @@ function isDisabledField(field: FormControl): boolean {
 
 function getNormalizedRole(field: HTMLElement): string {
   return field.getAttribute("role")?.trim().toLowerCase() ?? "";
+}
+
+function getSelectionControlRole(field: Element | null): "combobox" | "listbox" | null {
+  if (!(field instanceof HTMLElement) || field instanceof HTMLSelectElement) {
+    return null;
+  }
+
+  const normalizedRole = getNormalizedRole(field);
+
+  if (normalizedRole === "combobox" || normalizedRole === "listbox") {
+    return normalizedRole;
+  }
+
+  const popupType = field.getAttribute("aria-haspopup")?.trim().toLowerCase();
+
+  if (popupType === "listbox") {
+    return "combobox";
+  }
+
+  return null;
 }
 
 function resolveCurrentGroupElements(group: CandidateGroup): FormControl[] {

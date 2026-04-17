@@ -82,6 +82,31 @@ const WORKSPACE_HIGHLIGHTS = [
   "Verify the saved OpenAI API key, inspect scan and fill results, and export or restore full profile backups for debugging."
 ];
 
+const OPTIONS_SECTION_LINKS = [
+  { id: "workspace-controls", label: "Workspace controls" },
+  { id: "profile-backup", label: "Profile backup" },
+  { id: "profile-readiness", label: "Profile readiness" },
+  { id: "autofill-settings", label: "Autofill settings" },
+  { id: "resume-import", label: "Resume import" },
+  { id: "identity", label: "Identity" },
+  { id: "contact-links", label: "Contact and links" },
+  { id: "work-authorization", label: "Work authorization" },
+  { id: "skills", label: "Skills" },
+  { id: "answer-templates", label: "Answer templates" },
+  { id: "experience", label: "Experience" },
+  { id: "education", label: "Education" },
+  { id: "projects", label: "Projects" },
+  { id: "certifications", label: "Certifications" },
+  { id: "documents-snapshot", label: "Documents snapshot" },
+  { id: "application-flow", label: "Application flow" },
+  { id: "latest-fill-summary", label: "Latest fill summary" },
+  { id: "latest-match-summary", label: "Latest match summary" },
+  { id: "latest-ai-assist", label: "Latest AI assist" },
+  { id: "current-capabilities", label: "Current capabilities" },
+  { id: "active-profile-json", label: "Active profile JSON" },
+  { id: "last-scan-snapshot", label: "Last scan snapshot" }
+];
+
 function OptionsApp() {
   const [state, setState] = useState<StoredState>(() => createDefaultState());
   const [draftProfile, setDraftProfile] = useState<ApplicantProfile | null>(
@@ -780,48 +805,84 @@ function OptionsApp() {
         </div>
       </section>
 
-      <section className="surface">
-        <div className="section-head">
-          <h2>Workspace controls</h2>
-          <span className="inline-note">{status}</span>
-        </div>
+      <div className="options-workspace">
+        <aside className="surface options-sidebar" aria-label="Options sections">
+          <div className="section-head">
+            <h2>Navigate</h2>
+            <span className="inline-note">Jump to any profile or debug area</span>
+          </div>
 
-        <div className="button-row">
-          <button className="button" disabled={busy} onClick={refresh}>
-            {busy ? "Working..." : "Refresh state"}
-          </button>
-          <button
-            className="button button-secondary"
-            disabled={busy || !draftProfile || !isDirty}
-            onClick={handleSaveProfile}
-          >
-            {busy ? "Working..." : "Save profile changes"}
-          </button>
-          <button
-            className="button button-ghost"
-            disabled={busy || !draftProfile || !isDirty}
-            onClick={handleResetDraft}
-          >
-            Reset draft
-          </button>
-          <button
-            className="button button-ghost"
-            disabled={busy}
-            onClick={toggleDebugMode}
-          >
-            {state.debugMode ? "Disable debug mode" : "Enable debug mode"}
-          </button>
-          <button
-            className="button button-ghost"
-            disabled={busy}
-            onClick={handleResetStorage}
-          >
-            Reset stored profile
-          </button>
-        </div>
-      </section>
+          <div className="mini-grid options-sidebar-summary">
+            <div>
+              <span className="mini-label">Draft status</span>
+              <strong>{isDirty ? "Unsaved" : "Saved"}</strong>
+            </div>
+            <div>
+              <span className="mini-label">Active profile</span>
+              <strong>{draftProfile?.label ?? activeProfile.label}</strong>
+            </div>
+            <div>
+              <span className="mini-label">Resume</span>
+              <strong>
+                {draftProfile?.documents.resume?.fileName ??
+                  activeProfile.documents.resume?.fileName ??
+                  "Not linked"}
+              </strong>
+            </div>
+          </div>
 
-      <section className="surface">
+          <nav className="options-sidebar-nav">
+            {OPTIONS_SECTION_LINKS.map((link) => (
+              <a key={link.id} className="options-sidebar-link" href={`#${link.id}`}>
+                {link.label}
+              </a>
+            ))}
+          </nav>
+        </aside>
+
+        <div className="options-content">
+          <section id="workspace-controls" className="surface section-anchor">
+            <div className="section-head">
+              <h2>Workspace controls</h2>
+              <span className="inline-note">{status}</span>
+            </div>
+
+            <div className="button-row">
+              <button className="button" disabled={busy} onClick={refresh}>
+                {busy ? "Working..." : "Refresh state"}
+              </button>
+              <button
+                className="button button-secondary"
+                disabled={busy || !draftProfile || !isDirty}
+                onClick={handleSaveProfile}
+              >
+                {busy ? "Working..." : "Save profile changes"}
+              </button>
+              <button
+                className="button button-ghost"
+                disabled={busy || !draftProfile || !isDirty}
+                onClick={handleResetDraft}
+              >
+                Reset draft
+              </button>
+              <button
+                className="button button-ghost"
+                disabled={busy}
+                onClick={toggleDebugMode}
+              >
+                {state.debugMode ? "Disable debug mode" : "Enable debug mode"}
+              </button>
+              <button
+                className="button button-ghost"
+                disabled={busy}
+                onClick={handleResetStorage}
+              >
+                Reset stored profile
+              </button>
+            </div>
+          </section>
+
+      <section id="profile-backup" className="surface section-anchor">
         <div className="section-head">
           <h2>Profile backup</h2>
           <span className="inline-note">
@@ -891,7 +952,7 @@ function OptionsApp() {
         </p>
       </section>
 
-      <section className="surface">
+      <section id="profile-readiness" className="surface section-anchor">
         <div className="section-head">
           <h2>Profile readiness</h2>
           <span className="inline-note">
@@ -932,7 +993,7 @@ function OptionsApp() {
         </div>
       </section>
 
-      <section className="surface">
+      <section id="autofill-settings" className="surface section-anchor">
         <div className="section-head">
           <h2>Autofill settings</h2>
           <span className="inline-note">
@@ -1121,7 +1182,7 @@ function OptionsApp() {
         ) : null}
       </section>
 
-      <section className="surface">
+      <section id="resume-import" className="surface section-anchor">
         <div className="section-head">
           <h2>Resume import</h2>
           <span className="inline-note">
@@ -1296,7 +1357,7 @@ function OptionsApp() {
 
       {draftProfile ? (
         <>
-          <section className="surface">
+          <section id="identity" className="surface section-anchor">
             <div className="section-head">
               <h2>Identity</h2>
               <span className="inline-note">
@@ -1358,7 +1419,7 @@ function OptionsApp() {
             </div>
           </section>
 
-          <section className="surface">
+          <section id="contact-links" className="surface section-anchor">
             <div className="section-head">
               <h2>Contact and links</h2>
               <span className="inline-note">
@@ -1438,7 +1499,7 @@ function OptionsApp() {
             </div>
           </section>
 
-          <section className="surface">
+          <section id="work-authorization" className="surface section-anchor">
             <div className="section-head">
               <h2>Work authorization</h2>
               <span className="inline-note">
@@ -1601,7 +1662,7 @@ function OptionsApp() {
             </div>
           </section>
 
-          <section className="surface">
+          <section id="skills" className="surface section-anchor">
             <div className="section-head">
               <h2>Skills</h2>
               <span className="inline-note">
@@ -1621,7 +1682,7 @@ function OptionsApp() {
             </div>
           </section>
 
-          <section className="surface">
+          <section id="answer-templates" className="surface section-anchor">
             <div className="section-head">
               <h2>Answer templates</h2>
               <span className="inline-note">
@@ -1715,7 +1776,7 @@ function OptionsApp() {
             )}
           </section>
 
-          <section className="surface">
+          <section id="experience" className="surface section-anchor">
             <div className="section-head">
               <h2>Experience</h2>
               <span className="inline-note">
@@ -1875,7 +1936,7 @@ function OptionsApp() {
             )}
           </section>
 
-          <section className="surface">
+          <section id="education" className="surface section-anchor">
             <div className="section-head">
               <h2>Education</h2>
               <span className="inline-note">
@@ -2029,7 +2090,7 @@ function OptionsApp() {
             )}
           </section>
 
-          <section className="surface">
+          <section id="projects" className="surface section-anchor">
             <div className="section-head">
               <h2>Projects</h2>
               <span className="inline-note">
@@ -2165,7 +2226,7 @@ function OptionsApp() {
             )}
           </section>
 
-          <section className="surface">
+          <section id="certifications" className="surface section-anchor">
             <div className="section-head">
               <h2>Certifications</h2>
               <span className="inline-note">
@@ -2276,7 +2337,7 @@ function OptionsApp() {
             )}
           </section>
 
-          <section className="surface">
+          <section id="documents-snapshot" className="surface section-anchor">
             <div className="section-head">
               <h2>Documents snapshot</h2>
               <span className="inline-note">Saved document references</span>
@@ -2330,7 +2391,7 @@ function OptionsApp() {
           </section>
         )}
 
-      <section className="surface">
+      <section id="application-flow" className="surface section-anchor">
         <div className="section-head">
           <h2>Application flow</h2>
           <span className="inline-note">
@@ -2385,7 +2446,7 @@ function OptionsApp() {
         )}
       </section>
 
-      <section className="surface">
+      <section id="latest-fill-summary" className="surface section-anchor">
         <div className="section-head">
           <h2>Latest fill summary</h2>
           <span className="inline-note">
@@ -2448,7 +2509,7 @@ function OptionsApp() {
         )}
       </section>
 
-      <section className="surface">
+      <section id="latest-match-summary" className="surface section-anchor">
         <div className="section-head">
           <h2>Latest match summary</h2>
           <span className="inline-note">
@@ -2533,7 +2594,7 @@ function OptionsApp() {
         )}
       </section>
 
-      <section className="surface">
+      <section id="latest-ai-assist" className="surface section-anchor">
         <div className="section-head">
           <h2>Latest AI assist</h2>
           <span className="inline-note">
@@ -2602,7 +2663,7 @@ function OptionsApp() {
         )}
       </section>
 
-      <section className="surface">
+      <section id="current-capabilities" className="surface section-anchor">
         <div className="section-head">
           <h2>Current Capabilities</h2>
           <span className="inline-note">Profile editing, AI controls, uploads, and debugging</span>
@@ -2621,7 +2682,7 @@ function OptionsApp() {
         </ul>
       </section>
 
-      <section className="surface">
+      <section id="active-profile-json" className="surface section-anchor">
         <div className="section-head">
           <h2>Active profile JSON</h2>
           <span className="inline-note">
@@ -2633,7 +2694,7 @@ function OptionsApp() {
         </pre>
       </section>
 
-      <section className="surface">
+      <section id="last-scan-snapshot" className="surface section-anchor">
         <div className="section-head">
           <h2>Last scan snapshot</h2>
           <span className="inline-note">
@@ -2644,6 +2705,8 @@ function OptionsApp() {
           {JSON.stringify(state.lastScan, null, 2) ?? "null"}
         </pre>
       </section>
+        </div>
+      </div>
     </main>
   );
 }

@@ -160,6 +160,57 @@ describe("scanPage", () => {
     ).toBe(true);
   });
 
+  it("detects input-based ARIA combobox controls as selection fields", () => {
+    document.body.innerHTML = `
+      <form>
+        <section>
+          <label id="language-label" for="language-combobox">
+            Self Identification Language
+          </label>
+          <div class="select-wrapper">
+            <input
+              id="language-combobox"
+              type="text"
+              role="combobox"
+              aria-labelledby="language-label"
+              aria-controls="language-options"
+              aria-expanded="false"
+              placeholder="Select"
+            />
+          </div>
+          <ul id="language-options" role="listbox">
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">
+                English
+              </button>
+            </li>
+            <li role="presentation">
+              <button type="button" role="option" aria-selected="false">
+                Spanish
+              </button>
+            </li>
+          </ul>
+        </section>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const scan = scanPage(profile, {
+      href: "https://jobs.example.com/apply/input-combobox",
+      title: "Input Combobox"
+    });
+
+    expect(
+      scan.fieldMatches.some(
+        (match) =>
+          match.fieldId === "input:language-combobox" &&
+          match.inputType === "combobox" &&
+          match.matchedKey === "workAuthorization.selfIdentificationLanguage" &&
+          match.optionLabels.includes("English")
+      )
+    ).toBe(true);
+  });
+
   it("detects custom radio and checkbox groups in generic forms", () => {
     document.body.innerHTML = `
       <form>
