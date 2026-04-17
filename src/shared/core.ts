@@ -341,6 +341,7 @@ export interface AnswerTemplate {
 }
 
 export interface ExtensionSettings {
+  darkMode: boolean;
   fillMode: FillMode;
   autoSubmit: boolean;
   fullyAutoEnabled: boolean;
@@ -461,7 +462,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -486,6 +487,7 @@ export function createDefaultState(): StoredState {
 
 export function createDefaultSettings(): ExtensionSettings {
   return {
+    darkMode: false,
     fillMode: "neutral",
     autoSubmit: false,
     fullyAutoEnabled: false,
@@ -1583,6 +1585,7 @@ function normalizeExtensionSettings(
   const record = asRecord(raw);
 
   return {
+    darkMode: readBoolean(record?.darkMode, fallback.darkMode),
     fillMode: normalizeFillMode(record?.fillMode, fallback.fillMode),
     autoSubmit: readBoolean(record?.autoSubmit, fallback.autoSubmit),
     fullyAutoEnabled: readBoolean(

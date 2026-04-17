@@ -36,6 +36,14 @@ function PopupApp() {
     void refreshState();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = state?.settings.darkMode ? "dark" : "light";
+
+    return () => {
+      document.documentElement.dataset.theme = "light";
+    };
+  }, [state?.settings.darkMode]);
+
   const lastScan = state?.lastScan ?? null;
   const lastFill = state?.lastFill ?? null;
   const fillMode = state?.settings.fillMode ?? "conservative";

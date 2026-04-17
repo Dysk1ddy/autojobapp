@@ -128,6 +128,14 @@ function OptionsApp() {
     void refresh();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = draftSettings.darkMode ? "dark" : "light";
+
+    return () => {
+      document.documentElement.dataset.theme = "light";
+    };
+  }, [draftSettings.darkMode]);
+
   const activeProfile = useMemo(() => getActiveProfile(state), [state]);
   const savedProfileSummary = useMemo(
     () => summarizeApplicantProfile(activeProfile),
@@ -304,6 +312,13 @@ function OptionsApp() {
     updateDraftSettings((settings) => ({
       ...settings,
       fillMode: value
+    }));
+  }
+
+  function updateDarkMode(value: boolean) {
+    updateDraftSettings((settings) => ({
+      ...settings,
+      darkMode: value
     }));
   }
 
@@ -803,6 +818,14 @@ function OptionsApp() {
             {isDirty ? "Unsaved draft" : "Saved"}
           </span>
         </div>
+        <div className="top-preferences">
+          <CheckboxField
+            label="Dark mode"
+            checked={draftSettings.darkMode}
+            helper="Applies immediately. Click Save profile changes to keep this setting."
+            onChange={updateDarkMode}
+          />
+        </div>
       </section>
 
       <div className="options-workspace">
@@ -812,16 +835,16 @@ function OptionsApp() {
             <span className="inline-note">Jump to any profile or debug area</span>
           </div>
 
-          <div className="mini-grid options-sidebar-summary">
-            <div>
+          <div className="options-sidebar-status-list">
+            <div className="options-sidebar-status-row">
               <span className="mini-label">Draft status</span>
               <strong>{isDirty ? "Unsaved" : "Saved"}</strong>
             </div>
-            <div>
+            <div className="options-sidebar-status-row">
               <span className="mini-label">Active profile</span>
               <strong>{draftProfile?.label ?? activeProfile.label}</strong>
             </div>
-            <div>
+            <div className="options-sidebar-status-row">
               <span className="mini-label">Resume</span>
               <strong>
                 {draftProfile?.documents.resume?.fileName ??
