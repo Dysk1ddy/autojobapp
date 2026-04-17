@@ -957,6 +957,7 @@ function FillResultCard({ result }: { result: FilledFieldResult }) {
         <p className="match-copy">
           {result.matchedKey ?? "No profile key"}
           {result.fillSource === "ai" ? " -> AI assist" : ""}
+          {result.fillSource === "random" ? " -> Random option" : ""}
         </p>
         <p className="helper-line">{result.message}</p>
       </div>

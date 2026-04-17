@@ -24,7 +24,7 @@ export type FillMode = "conservative" | "neutral" | "liberal";
 export type AiAssistScope = "focused" | "expanded" | "aggressive";
 export type FieldElementTag = "input" | "textarea" | "select" | "custom";
 export type FillAction = "filled" | "skipped" | "unsupported" | "error";
-export type FillSource = "profile" | "ai" | "none";
+export type FillSource = "profile" | "ai" | "random" | "none";
 export type AiAssistStatus =
   | "disabled"
   | "missing_api_key"
@@ -1927,6 +1927,7 @@ function normalizeFillSource(value: unknown): FillSource {
   switch (value) {
     case "profile":
     case "ai":
+    case "random":
     case "none":
       return value;
     default:

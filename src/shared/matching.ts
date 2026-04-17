@@ -59,7 +59,18 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     key: "personal.fullName",
     label: "Full name",
-    synonyms: ["full name", "legal name", "your name", "applicant name", "name"],
+    synonyms: [
+      "full name",
+      "legal name",
+      "your name",
+      "applicant name",
+      "signature name",
+      "signed name",
+      "typed name",
+      "type your name",
+      "electronic signature",
+      "name"
+    ],
     autocomplete: ["name"],
     preferredInputTypes: ["text"],
     getValue: (profile) => textValue(profile.personal.fullName)
@@ -388,7 +399,18 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "disability",
       "self identify as having a disability",
       "voluntary self identification of disability",
-      "disability disclosure"
+      "voluntary self-identification of disability",
+      "self identification of disability",
+      "self-identification of disability",
+      "identify as an individual with a disability",
+      "do you have a disability",
+      "have a disability",
+      "disability disclosure",
+      "form cc 305",
+      "cc-305",
+      "cc 305",
+      "i do not want to answer",
+      "i do not wish to answer"
     ],
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],

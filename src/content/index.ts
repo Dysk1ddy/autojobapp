@@ -84,6 +84,27 @@ const BUTTON_CHOICE_SELECTOR = [
   "button[data-state]",
   "[role='button'][data-state]"
 ].join(", ");
+const AGREEMENT_POPUP_CONTAINER_SELECTOR = [
+  "[role='dialog']",
+  "[aria-modal='true']",
+  ".modal",
+  ".dialog",
+  ".popup",
+  ".overlay",
+  "[data-testid*='modal']",
+  "[data-testid*='dialog']",
+  "[data-testid*='popup']",
+  "[class*='modal']",
+  "[class*='dialog']",
+  "[class*='popup']",
+  "[class*='overlay']"
+].join(", ");
+const AGREEMENT_POPUP_BUTTON_SELECTOR = [
+  "button",
+  "[role='button']",
+  "input[type='button']",
+  "input[type='submit']"
+].join(", ");
 const REPEATABLE_SECTION_CONFIGS: RepeatableSectionConfig[] = [
   {
     prefix: "experience.",
@@ -253,19 +274,25 @@ export async function fillPage(
   ensureFillHighlightStyle();
 
   const results: FilledFieldResult[] = [];
+  await clickAgreementPopupButtons();
 
   for (const match of fieldMatches) {
-    results.push(
-      await fillMatchedGroup(
-        match,
-        groupByFieldId.get(match.fieldId),
-        profile,
-        repeatEntryIndexByFieldId.get(match.fieldId) ?? 0,
-        settings,
-        aiSuggestionByFieldId.get(match.fieldId)
-      )
+    const result = await fillMatchedGroup(
+      match,
+      groupByFieldId.get(match.fieldId),
+      profile,
+      repeatEntryIndexByFieldId.get(match.fieldId) ?? 0,
+      settings,
+      aiSuggestionByFieldId.get(match.fieldId)
     );
+    results.push(result);
+
+    if (isResumeUploadFillResult(result)) {
+      await clickAgreementPopupButtons({ waitForAsyncPopup: true });
+    }
   }
+
+  await clickAgreementPopupButtons();
 
   const scan = buildScanSummary(
     rawFields,
@@ -677,6 +704,28 @@ async function fillMatchedGroup(
 
   if (group.elements.some(isFileInput)) {
     return fillFileUploadGroup(match, group, profile);
+  }
+
+  const disabilitySignatureResult = await fillDisabilitySignatureNameField(
+    match,
+    group,
+    profile
+  );
+
+  if (disabilitySignatureResult) {
+    return disabilitySignatureResult;
+  }
+
+  const termsAgreementResult = await fillTermsAgreementPolicyField(match, group);
+
+  if (termsAgreementResult) {
+    return termsAgreementResult;
+  }
+
+  const randomReferralResult = await fillRandomReferralSourceDropdown(match, group);
+
+  if (randomReferralResult) {
+    return randomReferralResult;
   }
 
   const profileSuggestionAllowed = shouldFillConfidence(
@@ -1107,6 +1156,14 @@ function buildResult(
   };
 }
 
+function isResumeUploadFillResult(result: FilledFieldResult): boolean {
+  return (
+    result.action === "filled" &&
+    result.matchedKey === "documents.resume" &&
+    result.fillSource === "profile"
+  );
+}
+
 function createAiResolvedValue(suggestion: AiFieldSuggestion): ResolvedProfileValue {
   const value = suggestion.suggestedValue.trim();
 
@@ -1122,6 +1179,10 @@ function normalizeProfileResolvedValueForFill(
   matchedKey: ProfileFieldKey,
   resolvedValue: ResolvedProfileValue
 ): ResolvedProfileValue {
+  if (matchedKey === "workAuthorization.disabilityStatus") {
+    return normalizeDisabilityResolvedValueForFill(resolvedValue);
+  }
+
   if (matchedKey !== "contact.phone") {
     return resolvedValue;
   }
@@ -1167,6 +1228,93 @@ function normalizePhoneResolvedValueForFill(
   };
 }
 
+function normalizeDisabilityResolvedValueForFill(
+  resolvedValue: ResolvedProfileValue
+): ResolvedProfileValue {
+  const originalValue = stringifyResolvedValue(resolvedValue).trim();
+  const normalized = normalizeText(originalValue);
+
+  if (!normalized) {
+    return resolvedValue;
+  }
+
+  const aliases = [originalValue];
+
+  if (looksLikeDisclosureDeclineValue(normalized)) {
+    aliases.push(
+      "I do not want to answer",
+      "I do not wish to answer",
+      "Do not want to answer",
+      "Decline to answer",
+      "Prefer not to answer",
+      "Prefer not to say"
+    );
+  } else if (looksLikeNoDisabilityValue(normalized)) {
+    aliases.push(
+      "No, I do not have a disability and have not had one in the past",
+      "No, I do not have a disability",
+      "I do not have a disability",
+      "I don't have a disability",
+      "No"
+    );
+  } else if (looksLikeYesDisabilityValue(normalized)) {
+    aliases.push(
+      "Yes, I have a disability, or have had one in the past",
+      "Yes, I have a disability",
+      "I have a disability",
+      "Yes"
+    );
+  }
+
+  const raw = dedupeStrings(aliases.filter(Boolean));
+
+  return {
+    raw,
+    preview: resolvedValue.preview || originalValue || raw[0] || "",
+    hasValue: raw.length > 0
+  };
+}
+
+function looksLikeDisclosureDeclineValue(normalized: string): boolean {
+  return [
+    "prefer not to self identify",
+    "prefer not to say",
+    "prefer not to answer",
+    "declined to state",
+    "decline to state",
+    "decline to answer",
+    "i do not want to answer",
+    "i dont want to answer",
+    "i do not wish to answer",
+    "i dont wish to answer",
+    "do not want to answer",
+    "do not wish to answer"
+  ].includes(normalized);
+}
+
+function looksLikeNoDisabilityValue(normalized: string): boolean {
+  return (
+    normalized === "no" ||
+    normalized === "no disability" ||
+    normalized === "not disabled" ||
+    normalized.includes("do not have a disability") ||
+    normalized.includes("dont have a disability") ||
+    normalized.includes("do not identify as having a disability") ||
+    normalized.includes("dont identify as having a disability")
+  );
+}
+
+function looksLikeYesDisabilityValue(normalized: string): boolean {
+  return (
+    normalized === "yes" ||
+    normalized === "disabled" ||
+    normalized === "has disability" ||
+    normalized.includes("have a disability") ||
+    normalized.includes("had a disability") ||
+    normalized.includes("identify as having a disability")
+  );
+}
+
 function createBinaryChoicePolicyTarget(
   match: DetectedFieldMatch,
   group: CandidateGroup
@@ -1194,6 +1342,743 @@ function createBinaryChoicePolicyTarget(
       hasValue: true
     }
   };
+}
+
+async function fillDisabilitySignatureNameField(
+  match: DetectedFieldMatch,
+  group: CandidateGroup,
+  profile: ApplicantProfile
+): Promise<FilledFieldResult | null> {
+  if (!isDisabilitySignatureNameField(match, group)) {
+    return null;
+  }
+
+  const fullName = profile.personal.fullName.trim();
+
+  if (!fullName) {
+    return buildResult(
+      match,
+      "skipped",
+      "",
+      "The active profile does not contain a legal/full name for this disability signature field.",
+      {
+        matchedKey: "personal.fullName",
+        confidence: "high",
+        fillSource: "profile"
+      }
+    );
+  }
+
+  const resolvedValue: ResolvedProfileValue = {
+    raw: fullName,
+    preview: fullName,
+    hasValue: true
+  };
+
+  if (isAlreadyFilled(group, resolvedValue)) {
+    return buildResult(
+      match,
+      "skipped",
+      fullName,
+      "Skipped to avoid overwriting an existing disability signature name.",
+      {
+        matchedKey: "personal.fullName",
+        confidence: "high",
+        fillSource: "profile"
+      }
+    );
+  }
+
+  const attempt = await fillTextControl(group, resolvedValue);
+
+  return buildResult(
+    match,
+    attempt.verified ? "filled" : "skipped",
+    fullName,
+    attempt.verified
+      ? "Filled the disability self-identification signature name."
+      : attempt.failureMessage,
+    {
+      matchedKey: "personal.fullName",
+      confidence: "high",
+      fillSource: "profile"
+    }
+  );
+}
+
+function isDisabilitySignatureNameField(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
+  const primaryElement = resolvePrimaryElement(group);
+
+  if (
+    !primaryElement ||
+    primaryElement instanceof HTMLSelectElement ||
+    isChoiceGroup(group) ||
+    !isTextFillControl(primaryElement) ||
+    !isTextLikeCandidate(group.candidate)
+  ) {
+    return false;
+  }
+
+  const fieldIdentity = normalizeText(
+    [
+      match.label,
+      match.name,
+      match.placeholder,
+      match.ariaLabel,
+      group.candidate.label,
+      group.candidate.name,
+      group.candidate.elementId,
+      group.candidate.placeholder,
+      group.candidate.ariaLabel
+    ].join(" ")
+  );
+  const sectionText = normalizeText(
+    [
+      match.sectionHeading,
+      match.nearbyText,
+      match.matchedLabel,
+      group.candidate.sectionHeading,
+      group.candidate.nearbyText
+    ].join(" ")
+  );
+
+  return (
+    looksLikeDisabilitySelfIdentificationSection(sectionText) &&
+    looksLikeSignatureNameIdentity(fieldIdentity)
+  );
+}
+
+function looksLikeSignatureNameIdentity(searchable: string): boolean {
+  if (!searchable) {
+    return false;
+  }
+
+  return (
+    /\bname\b/.test(searchable) ||
+    searchable.includes("signature") ||
+    searchable.includes("signed by") ||
+    searchable.includes("type your name") ||
+    searchable.includes("typed name")
+  );
+}
+
+async function fillTermsAgreementPolicyField(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): Promise<FilledFieldResult | null> {
+  if (!isTermsAgreementField(match, group)) {
+    return null;
+  }
+
+  const primaryElement = resolvePrimaryElement(group);
+  const resolvedValue = createTermsAgreementResolvedValue(
+    Boolean(
+      primaryElement &&
+        !isChoiceGroup(group) &&
+        !(primaryElement instanceof HTMLSelectElement) &&
+        !isCustomSelectionControl(primaryElement) &&
+        isTextFillControl(primaryElement)
+    )
+  );
+
+  if (isAlreadyFilled(group, resolvedValue)) {
+    return buildTermsAgreementResult(
+      match,
+      "skipped",
+      resolvedValue.preview,
+      "Skipped because this terms/conditions field already has an affirmative value."
+    );
+  }
+
+  let attempt: FillControlAttempt | null = null;
+
+  if (isChoiceGroup(group)) {
+    attempt = await fillChoiceGroup(group, resolvedValue);
+  } else if (primaryElement instanceof HTMLSelectElement) {
+    attempt = await fillSelectControl(group, resolvedValue);
+  } else if (primaryElement && isCustomSelectionControl(primaryElement)) {
+    attempt = await fillCustomSelectionControl(group, resolvedValue);
+  } else if (primaryElement && isTextFillControl(primaryElement)) {
+    attempt = await fillTextControl(group, resolvedValue);
+  }
+
+  if (!attempt) {
+    return null;
+  }
+
+  return buildTermsAgreementResult(
+    match,
+    attempt.verified ? "filled" : "skipped",
+    resolvedValue.preview,
+    attempt.verified
+      ? "Accepted the detected terms/conditions acknowledgement."
+      : attempt.failureMessage
+  );
+}
+
+function buildTermsAgreementResult(
+  match: DetectedFieldMatch,
+  action: FilledFieldResult["action"],
+  valuePreview: string,
+  message: string
+): FilledFieldResult {
+  return buildResult(match, action, valuePreview, message, {
+    matchedKey: null,
+    confidence: "high",
+    fillSource: "none"
+  });
+}
+
+function createTermsAgreementResolvedValue(forTextField: boolean): ResolvedProfileValue {
+  if (forTextField) {
+    return {
+      raw: "I agree",
+      preview: "I agree",
+      hasValue: true
+    };
+  }
+
+  return {
+    raw: [
+      "I agree",
+      "I accept",
+      "I acknowledge",
+      "I consent",
+      "Yes",
+      "Agree",
+      "Accept",
+      "Acknowledge",
+      "Consent",
+      "Confirm",
+      "Confirmed",
+      "True"
+    ],
+    preview: "I agree",
+    hasValue: true
+  };
+}
+
+function isTermsAgreementField(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
+  const primaryElement = resolvePrimaryElement(group);
+
+  if (
+    !isChoiceGroup(group) &&
+    !(primaryElement instanceof HTMLSelectElement) &&
+    !(primaryElement && isCustomSelectionControl(primaryElement)) &&
+    !(primaryElement && isTextFillControl(primaryElement))
+  ) {
+    return false;
+  }
+
+  return looksLikeTermsAgreementQuestion(buildTermsAgreementSearchText(match, group));
+}
+
+function buildTermsAgreementSearchText(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): string {
+  return normalizeText(
+    [
+      match.label,
+      match.name,
+      match.placeholder,
+      match.ariaLabel,
+      match.sectionHeading,
+      match.nearbyText,
+      match.matchedLabel,
+      group.candidate.label,
+      group.candidate.name,
+      group.candidate.elementId,
+      group.candidate.placeholder,
+      group.candidate.ariaLabel,
+      group.candidate.sectionHeading,
+      group.candidate.nearbyText,
+      ...group.candidate.optionLabels
+    ].join(" ")
+  );
+}
+
+function looksLikeTermsAgreementQuestion(searchable: string): boolean {
+  if (!searchable) {
+    return false;
+  }
+
+  if (looksLikeNonTermsComplianceQuestion(searchable)) {
+    return false;
+  }
+
+  return (
+    searchable.includes("terms and conditions") ||
+    searchable.includes("terms of service") ||
+    searchable.includes("terms of use") ||
+    searchable.includes("terms conditions") ||
+    searchable.includes("accept terms") ||
+    searchable.includes("agree to terms") ||
+    searchable.includes("privacy policy") ||
+    searchable.includes("privacy notice") ||
+    searchable.includes("candidate privacy") ||
+    searchable.includes("data privacy") ||
+    searchable.includes("policy acknowledgement") ||
+    searchable.includes("policy acknowledgment") ||
+    searchable.includes("acknowledge policy") ||
+    searchable.includes("acknowledge receipt") ||
+    searchable.includes("i acknowledge") ||
+    searchable.includes("i agree") ||
+    searchable.includes("i accept") ||
+    searchable.includes("certify that") ||
+    searchable.includes("i certify") ||
+    searchable.includes("certification statement") ||
+    searchable.includes("consent and release") ||
+    searchable.includes("consent to the terms") ||
+    searchable.includes("background check consent") ||
+    searchable.includes("background check disclosure") ||
+    searchable.includes("electronic signature consent") ||
+    searchable.includes("agreement accepted") ||
+    searchable.includes("agreement acknowledgement") ||
+    searchable.includes("agreement acknowledgment")
+  );
+}
+
+function looksLikeNonTermsComplianceQuestion(searchable: string): boolean {
+  return (
+    looksLikeDisabilitySelfIdentificationSection(searchable) ||
+    searchable.includes("work authorization") ||
+    searchable.includes("legal right to work") ||
+    searchable.includes("require sponsorship") ||
+    searchable.includes("need sponsorship") ||
+    searchable.includes("veteran status") ||
+    searchable.includes("ethnicity") ||
+    searchable.includes("gender identity")
+  );
+}
+
+async function clickAgreementPopupButtons(options?: {
+  waitForAsyncPopup?: boolean;
+}): Promise<number> {
+  const immediateClicks = clickVisibleAgreementPopupButtons();
+
+  if (immediateClicks > 0 || !options?.waitForAsyncPopup) {
+    return immediateClicks;
+  }
+
+  await waitForDomUpdate(120);
+  return clickVisibleAgreementPopupButtons();
+}
+
+function clickVisibleAgreementPopupButtons(): number {
+  const clickedButtons = new Set<HTMLElement>();
+  let clickedCount = 0;
+
+  getVisibleAgreementPopupContainers().forEach((container) => {
+    if (!looksLikeAgreementPopupContainer(container)) {
+      return;
+    }
+
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>(AGREEMENT_POPUP_BUTTON_SELECTOR)
+    ).find(
+      (control) =>
+        !clickedButtons.has(control) &&
+        isVisibleActionControl(control) &&
+        looksLikeAgreementPopupButtonLabel(getActionControlLabel(control))
+    );
+
+    if (!target) {
+      return;
+    }
+
+    clickedButtons.add(target);
+    activateChoiceTarget(target, "Enter");
+    highlightFilledElement(target);
+    clickedCount += 1;
+  });
+
+  return clickedCount;
+}
+
+function getVisibleAgreementPopupContainers(): HTMLElement[] {
+  return queryAllDocuments<HTMLElement>(AGREEMENT_POPUP_CONTAINER_SELECTOR).filter(
+    (container) => isVisibleElement(container)
+  );
+}
+
+function looksLikeAgreementPopupContainer(container: HTMLElement): boolean {
+  const searchable = normalizeText(getElementDescriptorText(container));
+
+  if (looksLikeTermsAgreementQuestion(searchable)) {
+    return true;
+  }
+
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(AGREEMENT_POPUP_BUTTON_SELECTOR)
+  ).some((control) =>
+    looksLikeAgreementPopupButtonLabel(getActionControlLabel(control))
+  );
+}
+
+function getActionControlLabel(control: HTMLElement): string {
+  if (control instanceof HTMLInputElement) {
+    return cleanText(
+      control.value ||
+        control.getAttribute("aria-label") ||
+        control.getAttribute("title")
+    );
+  }
+
+  return cleanText(
+    [
+      control.textContent,
+      control.getAttribute("aria-label"),
+      control.getAttribute("title"),
+      control.getAttribute("value")
+    ].join(" ")
+  );
+}
+
+function looksLikeAgreementPopupButtonLabel(label: string): boolean {
+  const normalized = normalizeText(label);
+
+  if (!normalized || looksLikeNegativeAgreementLabel(normalized)) {
+    return false;
+  }
+
+  return (
+    normalized === "i agree" ||
+    normalized === "agree" ||
+    normalized === "i accept" ||
+    normalized === "accept" ||
+    normalized === "i acknowledge" ||
+    normalized === "acknowledge" ||
+    normalized === "yes" ||
+    normalized === "confirm" ||
+    normalized.includes("agree and continue") ||
+    normalized.includes("accept and continue") ||
+    normalized.includes("acknowledge and continue") ||
+    normalized.includes("i agree to") ||
+    normalized.includes("i accept") ||
+    normalized.includes("i acknowledge")
+  );
+}
+
+function looksLikeNegativeAgreementLabel(normalized: string): boolean {
+  return (
+    normalized.includes("do not") ||
+    normalized.includes("dont") ||
+    normalized.includes("decline") ||
+    normalized.includes("reject") ||
+    normalized.includes("disagree") ||
+    normalized.includes("not agree") ||
+    normalized.includes("not accept")
+  );
+}
+
+async function fillRandomReferralSourceDropdown(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): Promise<FilledFieldResult | null> {
+  if (!isReferralSourceDropdown(match, group)) {
+    return null;
+  }
+
+  const primaryElement = resolvePrimaryElement(group);
+
+  if (primaryElement instanceof HTMLSelectElement) {
+    return fillRandomNativeReferralSourceSelect(match, primaryElement);
+  }
+
+  if (primaryElement && isCustomSelectionControl(primaryElement)) {
+    return fillRandomCustomReferralSourceSelect(match, group, primaryElement);
+  }
+
+  return null;
+}
+
+function fillRandomNativeReferralSourceSelect(
+  match: DetectedFieldMatch,
+  element: HTMLSelectElement
+): FilledFieldResult {
+  const existingOption = element.selectedOptions[0] ?? null;
+
+  if (existingOption && isSelectableReferralOption(existingOption)) {
+    return buildRandomReferralResult(
+      match,
+      "skipped",
+      getNativeOptionDisplayText(existingOption),
+      "Skipped because this source/referral dropdown already has a selected value."
+    );
+  }
+
+  const option = pickRandomElement(
+    Array.from(element.options).filter(isSelectableReferralOption)
+  );
+
+  if (!option) {
+    return buildRandomReferralResult(
+      match,
+      "skipped",
+      "",
+      "No selectable source/referral dropdown options were available."
+    );
+  }
+
+  element.focus();
+  setNativeSelectValue(element, option.value);
+  dispatchEvents(element, ["input", "change", "blur"]);
+  highlightFilledElement(element);
+
+  const verified = element.value === option.value;
+  const preview = getNativeOptionDisplayText(option);
+
+  return buildRandomReferralResult(
+    match,
+    verified ? "filled" : "error",
+    preview,
+    verified
+      ? "Randomly selected a source/referral dropdown option."
+      : "The source/referral dropdown did not keep the randomly selected option."
+  );
+}
+
+async function fillRandomCustomReferralSourceSelect(
+  match: DetectedFieldMatch,
+  group: CandidateGroup,
+  element: CustomFormControl
+): Promise<FilledFieldResult> {
+  const existingValue = getMeaningfulCustomSelectionValue(element);
+
+  if (existingValue) {
+    return buildRandomReferralResult(
+      match,
+      "skipped",
+      existingValue,
+      "Skipped because this source/referral dropdown already has a selected value."
+    );
+  }
+
+  openCustomSelectionControl(element);
+  await waitForDomUpdate(120);
+
+  const option = pickRandomElement(
+    getAssociatedOptionElements(element).filter(isSelectableCustomReferralOption)
+  );
+
+  if (!option) {
+    return buildRandomReferralResult(
+      match,
+      "skipped",
+      "",
+      "No selectable source/referral dropdown options were available."
+    );
+  }
+
+  const preview = getCustomOptionDisplayText(option);
+  activateCustomOption(element, option);
+  await waitForDomUpdate(120);
+
+  if (!getMeaningfulCustomSelectionValue(element)) {
+    commitCustomSelectionFallback(element, option, preview);
+  }
+
+  const verified = Boolean(getMeaningfulCustomSelectionValue(element));
+
+  if (verified) {
+    highlightFilledElement(element);
+    highlightFilledElement(option);
+  }
+
+  void group;
+
+  return buildRandomReferralResult(
+    match,
+    verified ? "filled" : "error",
+    preview,
+    verified
+      ? "Randomly selected a source/referral dropdown option."
+      : "The source/referral dropdown did not keep the randomly selected option."
+  );
+}
+
+function buildRandomReferralResult(
+  match: DetectedFieldMatch,
+  action: FilledFieldResult["action"],
+  valuePreview: string,
+  message: string
+): FilledFieldResult {
+  return buildResult(match, action, valuePreview, message, {
+    matchedKey: null,
+    confidence: "high",
+    fillSource: "random"
+  });
+}
+
+function isReferralSourceDropdown(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): boolean {
+  const primaryElement = resolvePrimaryElement(group);
+
+  if (
+    !(primaryElement instanceof HTMLSelectElement) &&
+    !(primaryElement && isCustomSelectionControl(primaryElement))
+  ) {
+    return false;
+  }
+
+  return looksLikeReferralSourceQuestion(buildReferralSourceSearchText(match, group));
+}
+
+function buildReferralSourceSearchText(
+  match: DetectedFieldMatch,
+  group: CandidateGroup
+): string {
+  return normalizeText(
+    [
+      match.label,
+      match.name,
+      match.placeholder,
+      match.ariaLabel,
+      match.sectionHeading,
+      match.nearbyText,
+      match.matchedLabel,
+      group.candidate.label,
+      group.candidate.name,
+      group.candidate.elementId,
+      group.candidate.placeholder,
+      group.candidate.ariaLabel,
+      group.candidate.sectionHeading,
+      group.candidate.nearbyText,
+      ...group.candidate.optionLabels
+    ].join(" ")
+  );
+}
+
+function looksLikeReferralSourceQuestion(searchable: string): boolean {
+  if (!searchable) {
+    return false;
+  }
+
+  return (
+    searchable.includes("how did you hear about us") ||
+    searchable.includes("how did you hear of us") ||
+    searchable.includes("how did you learn about us") ||
+    searchable.includes("how did you find us") ||
+    searchable.includes("where did you hear about us") ||
+    searchable.includes("where did you learn about us") ||
+    searchable.includes("where did you find this job") ||
+    searchable.includes("how did you find this job") ||
+    searchable.includes("how did you find this position") ||
+    searchable.includes("how did you hear about this job") ||
+    searchable.includes("how did you hear about this role") ||
+    searchable.includes("how did you hear about this opportunity") ||
+    searchable.includes("how did you learn about this opportunity") ||
+    searchable.includes("referral source") ||
+    searchable.includes("applicant source") ||
+    searchable.includes("application source") ||
+    searchable.includes("candidate source") ||
+    searchable.includes("job source") ||
+    searchable.includes("source details") ||
+    searchable === "source"
+  );
+}
+
+function isSelectableReferralOption(option: HTMLOptionElement): boolean {
+  if (option.disabled) {
+    return false;
+  }
+
+  const label = cleanText(option.textContent);
+  const value = cleanText(option.value);
+
+  if (!label && !value) {
+    return false;
+  }
+
+  if (isPlaceholderDropdownToken(label) || isPlaceholderDropdownToken(value)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isSelectableCustomReferralOption(option: HTMLElement): boolean {
+  if (
+    option.getAttribute("aria-disabled") === "true" ||
+    option.hasAttribute("disabled")
+  ) {
+    return false;
+  }
+
+  return isMeaningfulDropdownOptionText(getCustomOptionDisplayText(option));
+}
+
+function isMeaningfulDropdownOptionText(value: string): boolean {
+  const normalized = normalizeText(cleanText(value));
+
+  if (!normalized) {
+    return false;
+  }
+
+  return !isPlaceholderDropdownToken(normalized);
+}
+
+function isPlaceholderDropdownToken(value: string): boolean {
+  const normalized = normalizeText(cleanText(value));
+
+  if (!normalized) {
+    return false;
+  }
+
+  return [
+    "select",
+    "please select",
+    "select an option",
+    "choose",
+    "choose one",
+    "choose an option",
+    "none selected",
+    "not selected",
+    "unknown"
+  ].includes(normalized);
+}
+
+function getNativeOptionDisplayText(option: HTMLOptionElement): string {
+  return cleanText(option.textContent || option.value);
+}
+
+function getCustomOptionDisplayText(option: HTMLElement): string {
+  return cleanText(
+    option.textContent ||
+      option.getAttribute("aria-label") ||
+      option.getAttribute("data-label") ||
+      option.getAttribute("data-value") ||
+      option.getAttribute("value") ||
+      option.getAttribute("title")
+  );
+}
+
+function getMeaningfulCustomSelectionValue(element: CustomFormControl): string {
+  const current = cleanText(
+    readTextControlValue(element) ||
+      element.getAttribute("aria-valuetext") ||
+      element.getAttribute("data-value") ||
+      resolveAriaReferenceElement(element, "aria-activedescendant")?.textContent
+  );
+
+  return isMeaningfulDropdownOptionText(current) ? current : "";
+}
+
+function pickRandomElement<T>(items: T[]): T | null {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return items[Math.floor(Math.random() * items.length)] ?? items[0] ?? null;
 }
 
 function isAlreadyFilled(
@@ -2027,6 +2912,13 @@ function isBinaryYesNoPolicyField(
   const primaryElement = resolvePrimaryElement(group);
   const searchable = buildBinaryPolicySearchText(match, group);
 
+  if (
+    match.matchedKey === "workAuthorization.disabilityStatus" ||
+    looksLikeDisabilitySelfIdentificationSection(searchable)
+  ) {
+    return false;
+  }
+
   if (isChoiceGroup(group)) {
     const options = getChoiceElements(group);
 
@@ -2069,6 +2961,25 @@ function isBinaryYesNoPolicyField(
   }
 
   return false;
+}
+
+function looksLikeDisabilitySelfIdentificationSection(searchable: string): boolean {
+  if (!searchable.includes("disability")) {
+    return false;
+  }
+
+  return (
+    searchable.includes("self identification") ||
+    searchable.includes("self identify") ||
+    searchable.includes("self-identification") ||
+    searchable.includes("self-identify") ||
+    searchable.includes("form cc") ||
+    searchable.includes("cc 305") ||
+    searchable.includes("cc-305") ||
+    searchable.includes("individual with a disability") ||
+    searchable.includes("have a disability") ||
+    searchable.includes("disability status")
+  );
 }
 
 function hasBinaryYesNoTokens(values: string[]): boolean {
@@ -2193,6 +3104,10 @@ function shouldDefaultYesForBinaryQuestion(
 
   if (!searchable) {
     return false;
+  }
+
+  if (looksLikeTermsAgreementQuestion(searchable)) {
+    return true;
   }
 
   if (

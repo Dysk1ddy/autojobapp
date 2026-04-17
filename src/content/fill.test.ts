@@ -1257,6 +1257,90 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills disability self-identification radios and required signature name", async () => {
+    document.body.innerHTML = `
+      <form>
+        <section>
+          <h2>Voluntary Self-Identification of Disability Form CC-305</h2>
+          <fieldset>
+            <legend>Disability Status</legend>
+            <label>
+              <input type="radio" name="disability_status" value="yes" />
+              Yes, I have a disability, or have had one in the past
+            </label>
+            <label>
+              <input type="radio" name="disability_status" value="no" />
+              No, I do not have a disability and have not had one in the past
+            </label>
+            <label>
+              <input type="radio" name="disability_status" value="decline" />
+              I do not want to answer
+            </label>
+          </fieldset>
+          <label>
+            Name
+            <input name="disability_signature_name" required />
+          </label>
+        </section>
+      </form>
+    `;
+
+    let nameChanged = false;
+    const nameInput = document.querySelector(
+      'input[name="disability_signature_name"]'
+    ) as HTMLInputElement;
+    nameInput.addEventListener("change", () => {
+      nameChanged = true;
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.disabilityStatus = "Prefer not to say";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/disability-self-id",
+      title: "Disability Self ID"
+    });
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="disability_status"]')
+    );
+
+    expect(radios.find((radio) => radio.value === "decline")?.checked).toBe(true);
+    expect(nameInput.value).toBe(profile.personal.fullName);
+    expect(nameChanged).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
+  it("fills disability self-identification dropdowns with the configured profile value", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Voluntary self-identification of disability
+          <select name="disability_status" required>
+            <option value="">Select a value</option>
+            <option value="yes">Yes, I have a disability, or have had one in the past</option>
+            <option value="no">No, I do not have a disability and have not had one in the past</option>
+            <option value="decline">I do not want to answer</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.disabilityStatus = "No";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/disability-dropdown",
+      title: "Disability Dropdown"
+    });
+
+    expect(
+      (document.querySelector('select[name="disability_status"]') as HTMLSelectElement)
+        .value
+    ).toBe("no");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("fills Micron-style screening dropdowns even when option values are coded", async () => {
     document.body.innerHTML = `
       <form>
@@ -1490,6 +1574,192 @@ describe("fillPage", () => {
       "English"
     );
     expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
+  it("randomly fills native how-did-you-hear-about-us dropdowns", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          How did you hear about us?
+          <select name="source">
+            <option value="">Select</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="handshake">Handshake</option>
+            <option value="company-site">Company website</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/source-native",
+      title: "Referral Source Native"
+    });
+
+    const select = document.querySelector('select[name="source"]') as HTMLSelectElement;
+    expect(["linkedin", "handshake", "company-site"]).toContain(select.value);
+    expect(result.fill.results[0]?.fillSource).toBe("random");
+    expect(result.fill.results[0]?.message).toContain("Randomly selected");
+  });
+
+  it("randomly fills custom how-did-you-hear-about-us dropdowns", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="source-label" for="source-combobox">How did you hear about us?</label>
+        <input
+          id="source-combobox"
+          type="text"
+          aria-labelledby="source-label"
+          aria-controls="source-options"
+          aria-expanded="false"
+          placeholder="Select"
+          value="Select"
+        />
+        <div id="source-options" hidden>
+          <button type="button" data-value="linkedin">LinkedIn</button>
+          <button type="button" data-value="handshake">Handshake</button>
+          <button type="button" data-value="company-site">Company website</button>
+        </div>
+      </form>
+    `;
+
+    const input = document.getElementById("source-combobox") as HTMLInputElement;
+    const options = document.getElementById("source-options") as HTMLElement;
+
+    input.addEventListener("click", () => {
+      input.setAttribute("aria-expanded", "true");
+      options.hidden = false;
+    });
+
+    Array.from(options.children).forEach((option) => {
+      option.addEventListener("click", () => {
+        input.value = option.textContent?.trim() ?? "";
+        input.dataset.value = (option as HTMLElement).dataset.value ?? "";
+        input.setAttribute("aria-expanded", "false");
+        options.hidden = true;
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/source-custom",
+      title: "Referral Source Custom"
+    });
+
+    expect(["LinkedIn", "Handshake", "Company website"]).toContain(input.value);
+    expect(result.fill.results[0]?.fillSource).toBe("random");
+    expect(result.fill.results[0]?.message).toContain("Randomly selected");
+  });
+
+  it("accepts terms and conditions fields across checkboxes, radios, selects, and text inputs", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          <input type="checkbox" name="terms_checkbox" />
+          I agree to the Terms and Conditions
+        </label>
+
+        <fieldset>
+          <legend>Please accept the privacy policy</legend>
+          <label>
+            <input type="radio" name="privacy_policy" value="no" />
+            No
+          </label>
+          <label>
+            <input type="radio" name="privacy_policy" value="yes" />
+            Yes
+          </label>
+        </fieldset>
+
+        <label>
+          Terms and Conditions
+          <select name="terms_select" required>
+            <option value="">Select</option>
+            <option value="disagree">I do not agree</option>
+            <option value="agree">I agree</option>
+          </select>
+        </label>
+
+        <label>
+          Type I agree to accept the terms of use
+          <input type="text" name="terms_text" required />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/terms-controls",
+      title: "Terms Controls"
+    });
+
+    expect(
+      (document.querySelector('input[name="terms_checkbox"]') as HTMLInputElement)
+        .checked
+    ).toBe(true);
+    expect(
+      (document.querySelector(
+        'input[name="privacy_policy"][value="yes"]'
+      ) as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (document.querySelector('select[name="terms_select"]') as HTMLSelectElement)
+        .value
+    ).toBe("agree");
+    expect(
+      (document.querySelector('input[name="terms_text"]') as HTMLInputElement).value
+    ).toBe("I agree");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(4);
+  });
+
+  it("accepts custom terms acknowledgement dropdowns", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="privacy-label" for="privacy-combobox">
+          I acknowledge the candidate privacy notice
+        </label>
+        <input
+          id="privacy-combobox"
+          type="text"
+          aria-labelledby="privacy-label"
+          aria-controls="privacy-options"
+          aria-expanded="false"
+          placeholder="Select"
+          value="Select"
+        />
+        <div id="privacy-options" hidden>
+          <button type="button" data-value="reject">I do not accept</button>
+          <button type="button" data-value="accept">I accept</button>
+        </div>
+      </form>
+    `;
+
+    const input = document.getElementById("privacy-combobox") as HTMLInputElement;
+    const options = document.getElementById("privacy-options") as HTMLElement;
+
+    input.addEventListener("click", () => {
+      input.setAttribute("aria-expanded", "true");
+      options.hidden = false;
+    });
+
+    Array.from(options.children).forEach((option) => {
+      option.addEventListener("click", () => {
+        input.value = option.textContent?.trim() ?? "";
+        input.dataset.value = (option as HTMLElement).dataset.value ?? "";
+        input.setAttribute("aria-expanded", "false");
+        options.hidden = true;
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/privacy-custom",
+      title: "Privacy Custom"
+    });
+
+    expect(input.value).toBe("I accept");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
   it("answers age eligibility radio and text questions with yes", async () => {
@@ -1748,6 +2018,60 @@ describe("fillPage", () => {
     expect(resumeInput.files?.[0]?.name).toBe("resume.pdf");
     expect(result.fill.results[0]?.action).toBe("filled");
     expect(result.fill.results[0]?.fillSource).toBe("profile");
+  });
+
+  it("accepts agreement popups shown after resume upload", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Upload resume
+          <input type="file" name="resume" style="display: none;" />
+        </label>
+      </form>
+      <div role="dialog" id="upload-agreement-dialog" hidden>
+        <p>Please accept the upload terms before continuing.</p>
+        <button type="button" id="upload-agree-button">I agree</button>
+      </div>
+    `;
+
+    const dialog = document.getElementById(
+      "upload-agreement-dialog"
+    ) as HTMLElement;
+    const agreeButton = document.getElementById(
+      "upload-agree-button"
+    ) as HTMLButtonElement;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    let agreed = false;
+
+    input.addEventListener("change", () => {
+      dialog.hidden = false;
+    });
+    agreeButton.addEventListener("click", () => {
+      agreed = true;
+      dialog.hidden = true;
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.documents.resume = {
+      id: "resume-with-agreement",
+      name: "Resume PDF",
+      fileName: "resume.pdf",
+      mimeType: "application/pdf",
+      source: "local",
+      sizeBytes: 12,
+      dataBase64: "cmVzdW1lIGRhdGE=",
+      lastUpdatedAt: new Date().toISOString()
+    };
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/resume-upload-agreement",
+      title: "Resume Upload Agreement"
+    });
+
+    expect(input.files?.length).toBe(1);
+    expect(agreed).toBe(true);
+    expect(dialog.hidden).toBe(true);
+    expect(result.fill.results[0]?.action).toBe("filled");
   });
 
   it("dispatches wrapper upload events for dropzone-style resume fields", async () => {
