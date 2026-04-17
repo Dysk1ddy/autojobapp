@@ -94,7 +94,7 @@ describe("shouldFillConfidence", () => {
     );
 
     expect(fallback.workAuthorization.selfIdentificationLanguage).toBe("");
-    expect(fallback.workAuthorization.isAtLeast18).toBe("unknown");
+    expect(fallback.workAuthorization.isAtLeast18).toBe("yes");
     expect(imported.workAuthorization.selfIdentificationLanguage).toBe("English");
     expect(imported.workAuthorization.canVerifyLegalWorkRight).toBe("yes");
     expect(imported.workAuthorization.boardDirectorPlans).toBe("no");

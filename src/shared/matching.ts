@@ -157,7 +157,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     key: "contact.state",
     label: "State or province",
-    synonyms: ["state", "province", "state or province", "region"],
+    synonyms: ["state", "province", "state or province", "state province", "region"],
     autocomplete: ["address-level1"],
     preferredInputTypes: ["text"],
     getValue: (profile) => textValue(profile.contact.state)
@@ -443,12 +443,22 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "at least 18 years old",
       "18 years old",
       "18 years of age",
-      "over 18"
+      "over 18",
+      "18 or older",
+      "older than 18",
+      "age requirement",
+      "age eligibility"
     ],
     preferredTags: ["select", "input"],
     preferredInputTypes: ["radio", "checkbox", "select", "text"],
     getValue: (profile) =>
-      textValue(toSentenceCase(profile.workAuthorization.isAtLeast18))
+      textValue(
+        toSentenceCase(
+          profile.workAuthorization.isAtLeast18 === "unknown"
+            ? "yes"
+            : profile.workAuthorization.isAtLeast18
+        )
+      )
   },
   {
     key: "workAuthorization.canVerifyLegalWorkRight",
@@ -874,8 +884,30 @@ function scoreSource(
 
     if (matches) {
       pushUnique(signals, `${sourceLabel}:${phrase}`);
-      return weight;
+      return weight + getSourceMatchBoost(normalizedSource, normalizedPhrase);
     }
+  }
+
+  return 0;
+}
+
+function getSourceMatchBoost(
+  normalizedSource: string,
+  normalizedPhrase: string
+): number {
+  if (!normalizedSource || !normalizedPhrase) {
+    return 0;
+  }
+
+  if (normalizedSource === normalizedPhrase) {
+    return 10;
+  }
+
+  if (
+    normalizedSource.endsWith(` ${normalizedPhrase}`) ||
+    normalizedSource.startsWith(`${normalizedPhrase} `)
+  ) {
+    return Math.min(6, Math.max(2, normalizedPhrase.split(" ").length * 2));
   }
 
   return 0;

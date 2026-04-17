@@ -357,6 +357,78 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("fills standard identity and address fields in conservative mode", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="field-row">
+          <span class="field-label">First Name</span>
+          <input data-testid="candidate-first-name" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Last Name</span>
+          <input data-testid="candidate-last-name" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Address Line 1</span>
+          <input data-testid="candidate-address-line-1" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">City</span>
+          <input data-testid="candidate-city" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">Postal Code</span>
+          <input data-testid="candidate-postal-code" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">State</span>
+          <select data-testid="candidate-state">
+            <option value="">Select</option>
+            <option value="CA">California</option>
+            <option value="NY">NY</option>
+          </select>
+        </div>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/basic-profile",
+      title: "Basic Profile",
+      settings: {
+        ...createDefaultSettings(),
+        fillMode: "conservative"
+      }
+    });
+
+    expect(
+      (document.querySelector('[data-testid="candidate-first-name"]') as HTMLInputElement)
+        .value
+    ).toBe(profile.personal.firstName);
+    expect(
+      (document.querySelector('[data-testid="candidate-last-name"]') as HTMLInputElement)
+        .value
+    ).toBe(profile.personal.lastName);
+    expect(
+      (document.querySelector(
+        '[data-testid="candidate-address-line-1"]'
+      ) as HTMLInputElement).value
+    ).toBe(profile.contact.addressLine1);
+    expect(
+      (document.querySelector('[data-testid="candidate-city"]') as HTMLInputElement)
+        .value
+    ).toBe(profile.contact.city);
+    expect(
+      (document.querySelector('[data-testid="candidate-postal-code"]') as HTMLInputElement)
+        .value
+    ).toBe(profile.contact.postalCode);
+    expect(
+      (document.querySelector('[data-testid="candidate-state"]') as HTMLSelectElement)
+        .value
+    ).toBe(profile.contact.state);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(6);
+  });
+
   it("fills a contenteditable textbox using a template-backed answer", async () => {
     document.body.innerHTML = `
       <form>
@@ -1269,7 +1341,7 @@ describe("fillPage", () => {
     expect(
       (document.querySelector('select[name="age_requirement"]') as HTMLSelectElement)
         .value
-    ).toBe("N");
+    ).toBe("Y");
     expect(
       (document.querySelector(
         'select[name="legal_right_to_work"]'
@@ -1296,6 +1368,46 @@ describe("fillPage", () => {
       ) as HTMLSelectElement).value
     ).toBe("N");
     expect(result.fill.filled).toBeGreaterThanOrEqual(7);
+  });
+
+  it("answers age eligibility radio and text questions with yes", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <legend>Are you 18 or older?</legend>
+          <label>
+            <input type="radio" name="age_eligible" value="Yes" />
+            Yes
+          </label>
+          <label>
+            <input type="radio" name="age_eligible" value="No" />
+            No
+          </label>
+        </fieldset>
+        <label>
+          Are you at least 18 years of age?
+          <input type="text" name="age_text" />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.isAtLeast18 = "unknown";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/age-eligibility",
+      title: "Age Eligibility"
+    });
+
+    const radios = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="age_eligible"]')
+    );
+
+    expect(radios.find((radio) => radio.value === "Yes")?.checked).toBe(true);
+    expect(
+      (document.querySelector('input[name="age_text"]') as HTMLInputElement).value
+    ).toBe("Yes");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(2);
   });
 
   it("defaults unknown yes-no screening dropdowns to no", async () => {

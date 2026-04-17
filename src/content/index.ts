@@ -642,8 +642,8 @@ function buildCandidate(
     label: adapter.getLabel(field) || extractFieldLabel(field),
     elementTag,
     inputType: detectFieldInputType(field),
-    name: field.getAttribute("name")?.trim() ?? "",
-    elementId: field.id.trim(),
+    name: getFieldSemanticName(field),
+    elementId: getFieldSemanticId(field),
     placeholder: getFieldPlaceholder(field),
     ariaLabel: field.getAttribute("aria-label")?.trim() ?? "",
     autocomplete: field.getAttribute("autocomplete")?.trim() ?? "",
@@ -2152,6 +2152,22 @@ function looksLikeBinaryQuestion(searchable: string): boolean {
   );
 }
 
+function looksLikeAgeEligibilityQuestion(searchable: string): boolean {
+  if (!searchable) {
+    return false;
+  }
+
+  return (
+    searchable.includes("at least 18") ||
+    searchable.includes("18 years old") ||
+    searchable.includes("18 years of age") ||
+    searchable.includes("18 or older") ||
+    searchable.includes("older than 18") ||
+    searchable.includes("age requirement") ||
+    searchable.includes("age eligibility")
+  );
+}
+
 function shouldDefaultYesForBinaryQuestion(
   match: DetectedFieldMatch,
   group: CandidateGroup
@@ -2163,11 +2179,12 @@ function shouldDefaultYesForBinaryQuestion(
   }
 
   if (
+    looksLikeAgeEligibilityQuestion(searchable) ||
     searchable.includes("sponsorship") ||
     searchable.includes("future sponsorship") ||
     searchable.includes("visa")
   ) {
-    return false;
+    return looksLikeAgeEligibilityQuestion(searchable);
   }
 
   return [
@@ -2679,8 +2696,8 @@ function buildFileUploadCandidate(
     selectorHint: buildSelectorHint(input, 0),
     label: extractFieldLabel(input),
     inputType: detectFieldInputType(input),
-    name: input.getAttribute("name")?.trim() ?? "",
-    elementId: input.id.trim(),
+    name: getFieldSemanticName(input),
+    elementId: getFieldSemanticId(input),
     placeholder: getFieldPlaceholder(input),
     ariaLabel: input.getAttribute("aria-label")?.trim() ?? "",
     autocomplete: input.getAttribute("autocomplete")?.trim() ?? "",
@@ -3203,12 +3220,15 @@ function extractFieldLabel(field: FormControl): string {
   const candidates = [
     extractChoiceGroupLabel(field),
     resolveAriaReferenceText(field, "aria-labelledby"),
+    resolveAriaReferenceText(field, "aria-describedby"),
     field.id
       ? queryFirstDocument<HTMLElement>(`label[for="${escapeAttributeValue(field.id)}"]`)
           ?.textContent
       : "",
     getElementLabelText(field),
+    getNearbyLabelText(field),
     field.closest("label")?.textContent,
+    getSemanticAttributeText(field),
     field.getAttribute("aria-label"),
     field.getAttribute("title"),
     field.getAttribute("placeholder"),
@@ -3228,6 +3248,80 @@ function getElementLabelText(field: FormControl): string {
     field instanceof HTMLSelectElement
   ) {
     return cleanText(field.labels?.[0]?.textContent);
+  }
+
+  return "";
+}
+
+function getNearbyLabelText(field: FormControl): string {
+  const candidates: string[] = [];
+  const previous = field.previousElementSibling;
+  const parent = field.parentElement;
+
+  if (previous) {
+    candidates.push(previous.textContent ?? "");
+  }
+
+  if (parent) {
+    const labelledSibling = Array.from(
+      parent.querySelectorAll<HTMLElement>(
+        ".label, .field-label, [data-label], [data-testid*='label'], [class*='label']"
+      )
+    ).find((element) => element !== field && !element.contains(field));
+
+    candidates.push(labelledSibling?.textContent ?? "");
+  }
+
+  return candidates.map(cleanText).find(Boolean) ?? "";
+}
+
+function getFieldSemanticName(field: Element): string {
+  return getFirstAttributeValue(field, [
+    "name",
+    "data-name",
+    "data-field",
+    "data-testid",
+    "data-test-id",
+    "data-qa",
+    "data-automation-id",
+    "formcontrolname",
+    "ng-reflect-name"
+  ]);
+}
+
+function getFieldSemanticId(field: Element): string {
+  return getFirstAttributeValue(field, [
+    "id",
+    "data-testid",
+    "data-test-id",
+    "data-qa",
+    "data-automation-id"
+  ]);
+}
+
+function getSemanticAttributeText(field: Element): string {
+  return [
+    "data-name",
+    "data-field",
+    "data-testid",
+    "data-test-id",
+    "data-qa",
+    "data-automation-id",
+    "formcontrolname",
+    "ng-reflect-name"
+  ]
+    .map((attribute) => field.getAttribute(attribute)?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getFirstAttributeValue(field: Element, attributes: string[]): string {
+  for (const attribute of attributes) {
+    const value = field.getAttribute(attribute)?.trim();
+
+    if (value) {
+      return value;
+    }
   }
 
   return "";
@@ -3367,6 +3461,7 @@ function getFieldPlaceholder(field: FormControl): string {
   return (
     field.getAttribute("placeholder")?.trim() ??
     field.getAttribute("data-placeholder")?.trim() ??
+    field.getAttribute("aria-placeholder")?.trim() ??
     ""
   );
 }

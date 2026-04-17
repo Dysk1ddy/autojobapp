@@ -9,7 +9,9 @@ export function TextField({
   onChange,
   helper,
   className,
-  type = "text"
+  type = "text",
+  name,
+  autoComplete
 }: {
   label: string;
   value: string;
@@ -17,6 +19,8 @@ export function TextField({
   helper?: string;
   className?: string;
   type?: string;
+  name?: string;
+  autoComplete?: string;
 }) {
   return (
     <label className={joinClassNames("field", className)}>
@@ -24,6 +28,8 @@ export function TextField({
       <input
         className="field-control"
         type={type}
+        name={name}
+        autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -38,7 +44,9 @@ export function TextAreaField({
   onChange,
   helper,
   className,
-  rows = 4
+  rows = 4,
+  name,
+  autoComplete
 }: {
   label: string;
   value: string;
@@ -46,6 +54,8 @@ export function TextAreaField({
   helper?: string;
   className?: string;
   rows?: number;
+  name?: string;
+  autoComplete?: string;
 }) {
   return (
     <label className={joinClassNames("field", className)}>
@@ -53,6 +63,8 @@ export function TextAreaField({
       <textarea
         className="field-control field-control-area"
         rows={rows}
+        name={name}
+        autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -67,7 +79,9 @@ export function SelectField({
   options,
   onChange,
   helper,
-  className
+  className,
+  name,
+  autoComplete
 }: {
   label: string;
   value: string;
@@ -75,12 +89,16 @@ export function SelectField({
   onChange: (value: string) => void;
   helper?: string;
   className?: string;
+  name?: string;
+  autoComplete?: string;
 }) {
   return (
     <label className={joinClassNames("field", className)}>
       <span className="field-label">{label}</span>
       <select
         className="field-control"
+        name={name}
+        autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

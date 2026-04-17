@@ -656,7 +656,7 @@ export function createDefaultApplicantProfile(
       gender: "Prefer not to self-identify",
       ethnicity: "Prefer not to self-identify",
       selfIdentificationLanguage: "",
-      isAtLeast18: "unknown",
+      isAtLeast18: "yes",
       canVerifyLegalWorkRight: "unknown",
       terminationHistory: "unknown",
       friendsOrRelativesAtCompany: "unknown",

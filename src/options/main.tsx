@@ -1401,16 +1401,22 @@ function OptionsApp() {
               />
               <TextField
                 label="Full name"
+                name="name"
+                autoComplete="name"
                 value={draftProfile.personal.fullName}
                 onChange={(value) => updatePersonalField("fullName", value)}
               />
               <TextField
                 label="First name"
+                name="given-name"
+                autoComplete="given-name"
                 value={draftProfile.personal.firstName}
                 onChange={(value) => updatePersonalField("firstName", value)}
               />
               <TextField
                 label="Last name"
+                name="family-name"
+                autoComplete="family-name"
                 value={draftProfile.personal.lastName}
                 onChange={(value) => updatePersonalField("lastName", value)}
               />
@@ -1454,44 +1460,60 @@ function OptionsApp() {
               <TextField
                 label="Email"
                 type="email"
+                name="email"
+                autoComplete="email"
                 value={draftProfile.contact.email}
                 onChange={(value) => updateContactField("email", value)}
               />
               <TextField
                 label="Phone"
                 type="tel"
+                name="tel"
+                autoComplete="tel"
                 value={draftProfile.contact.phone}
                 onChange={(value) => updateContactField("phone", value)}
               />
               <TextField
                 className="field-span-2"
                 label="Address line 1"
+                name="address-line1"
+                autoComplete="address-line1"
                 value={draftProfile.contact.addressLine1}
                 onChange={(value) => updateContactField("addressLine1", value)}
               />
               <TextField
                 className="field-span-2"
                 label="Address line 2"
+                name="address-line2"
+                autoComplete="address-line2"
                 value={draftProfile.contact.addressLine2}
                 onChange={(value) => updateContactField("addressLine2", value)}
               />
               <TextField
                 label="City"
+                name="address-level2"
+                autoComplete="address-level2"
                 value={draftProfile.contact.city}
                 onChange={(value) => updateContactField("city", value)}
               />
               <TextField
                 label="State / province"
+                name="address-level1"
+                autoComplete="address-level1"
                 value={draftProfile.contact.state}
                 onChange={(value) => updateContactField("state", value)}
               />
               <TextField
                 label="Postal code"
+                name="postal-code"
+                autoComplete="postal-code"
                 value={draftProfile.contact.postalCode}
                 onChange={(value) => updateContactField("postalCode", value)}
               />
               <TextField
                 label="Country"
+                name="country-name"
+                autoComplete="country-name"
                 value={draftProfile.contact.country}
                 onChange={(value) => updateContactField("country", value)}
               />
