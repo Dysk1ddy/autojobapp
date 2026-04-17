@@ -690,19 +690,27 @@ async function fillMatchedGroup(
     match.matchedKey
       ? resolveProfileFieldValue(profile, match.matchedKey, repeatEntryIndex)
       : null;
+  const profileFillResolvedValue =
+    match.matchedKey && profileResolvedValue
+      ? normalizeProfileResolvedValueForFill(
+          profile,
+          match.matchedKey,
+          profileResolvedValue
+        )
+      : profileResolvedValue;
   const aiResolvedValue = aiSuggestion
     ? createAiResolvedValue(aiSuggestion)
     : null;
   const profileTarget =
     profileSuggestionAllowed &&
     match.matchedKey &&
-    profileResolvedValue?.hasValue &&
-    profileResolvedValue.raw !== null
+    profileFillResolvedValue?.hasValue &&
+    profileFillResolvedValue.raw !== null
       ? {
           source: "profile" as const,
           matchedKey: match.matchedKey,
           confidence: match.confidence,
-          resolvedValue: profileResolvedValue
+          resolvedValue: profileFillResolvedValue
         }
       : null;
   const aiTarget =
@@ -741,11 +749,11 @@ async function fillMatchedGroup(
       );
     }
 
-    if (profileSuggestionAllowed && profileResolvedValue) {
+    if (profileSuggestionAllowed && profileFillResolvedValue) {
       return buildResult(
         match,
         "skipped",
-        aiSuggestion?.valuePreview || profileResolvedValue.preview,
+        aiSuggestion?.valuePreview || profileFillResolvedValue.preview,
         repeatEntryIndex > 0
           ? `The active profile does not have a saved value for entry ${repeatEntryIndex + 1} of this repeated section.`
           : "The active profile does not have a saved value for this field."
@@ -1097,6 +1105,56 @@ function createAiResolvedValue(suggestion: AiFieldSuggestion): ResolvedProfileVa
     raw: value || null,
     preview: suggestion.valuePreview || value,
     hasValue: Boolean(value)
+  };
+}
+
+function normalizeProfileResolvedValueForFill(
+  profile: ApplicantProfile,
+  matchedKey: ProfileFieldKey,
+  resolvedValue: ResolvedProfileValue
+): ResolvedProfileValue {
+  if (matchedKey !== "contact.phone") {
+    return resolvedValue;
+  }
+
+  return normalizePhoneResolvedValueForFill(profile, resolvedValue);
+}
+
+function normalizePhoneResolvedValueForFill(
+  profile: ApplicantProfile,
+  resolvedValue: ResolvedProfileValue
+): ResolvedProfileValue {
+  const rawValue = stringifyResolvedValue(resolvedValue).trim();
+
+  if (!rawValue) {
+    return resolvedValue;
+  }
+
+  const digits = rawValue.replace(/\D/g, "");
+  const country = normalizeText(profile.contact.country || "");
+  const hasUsCountry =
+    country === "us" ||
+    country === "usa" ||
+    country === "united states" ||
+    country === "united states of america";
+  const hasUsDialingPrefix = /^\s*\+1\b/.test(rawValue);
+  const shouldUseNationalUsNumber = hasUsCountry || hasUsDialingPrefix;
+
+  if (!shouldUseNationalUsNumber || digits.length < 7) {
+    return resolvedValue;
+  }
+
+  const nationalDigits =
+    digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+
+  if (nationalDigits.length < 7 || nationalDigits.length > 10) {
+    return resolvedValue;
+  }
+
+  return {
+    raw: nationalDigits,
+    preview: nationalDigits,
+    hasValue: true
   };
 }
 
@@ -2085,6 +2143,9 @@ function looksLikeBinaryQuestion(searchable: string): boolean {
     searchable.startsWith("can you ") ||
     searchable.includes(" will you ") ||
     searchable.startsWith("will you ") ||
+    searchable.includes(" require sponsorship ") ||
+    searchable.includes(" need sponsorship ") ||
+    searchable.includes(" immigration related employment benefit ") ||
     searchable.includes(" if employment is offered can you ") ||
     searchable.includes(" legally authorized ") ||
     searchable.includes(" legal right to work ")
@@ -2281,21 +2342,42 @@ function findMatchingCustomOption(
   element: HTMLElement,
   normalizedValues: string[]
 ): HTMLElement | null {
-  return (
-    getAssociatedOptionElements(element).find((option) => {
-      const tokens = [
-        option.textContent,
-        option.getAttribute("aria-label"),
-        option.getAttribute("data-value")
-      ]
-        .map((value) => normalizeText(cleanText(value)))
-        .filter(Boolean);
+  const options = getAssociatedOptionElements(element).map((option) => ({
+    option,
+    tokens: getCustomOptionTokens(option)
+  }));
 
-      return normalizedValues.some((needle) =>
-        tokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
-      );
-    }) ?? null
-  );
+  for (const needle of normalizedValues) {
+    const exact = options.find(({ tokens }) =>
+      tokens.some((token) => token === needle)
+    );
+
+    if (exact) {
+      return exact.option;
+    }
+  }
+
+  for (const needle of normalizedValues) {
+    const partial = options.find(({ tokens }) =>
+      tokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
+    );
+
+    if (partial) {
+      return partial.option;
+    }
+  }
+
+  return null;
+}
+
+function getCustomOptionTokens(option: HTMLElement): string[] {
+  return [
+    option.textContent,
+    option.getAttribute("aria-label"),
+    option.getAttribute("data-value")
+  ]
+    .map((value) => normalizeText(cleanText(value)))
+    .filter(Boolean);
 }
 
 function activateCustomOption(control: HTMLElement, option: HTMLElement): void {
@@ -2733,11 +2815,37 @@ function doesNormalizedOptionTokenMatch(token: string, needle: string): boolean 
     return false;
   }
 
+  if (
+    (isUnitedStatesNeedle(needle) && isUnitedStatesTerritoryToken(token)) ||
+    (isUnitedStatesNeedle(token) && isUnitedStatesTerritoryToken(needle))
+  ) {
+    return false;
+  }
+
   return token.includes(needle) || needle.includes(token);
 }
 
 function isStrictBinaryChoiceToken(value: string): boolean {
   return ["yes", "no", "true", "false", "y", "n", "unknown"].includes(value);
+}
+
+function isUnitedStatesNeedle(value: string): boolean {
+  return [
+    "us",
+    "usa",
+    "u s",
+    "united states",
+    "united states of america"
+  ].includes(value);
+}
+
+function isUnitedStatesTerritoryToken(value: string): boolean {
+  return (
+    value.includes("united states minor outlying islands") ||
+    value.includes("u s minor outlying islands") ||
+    value.includes("us minor outlying islands") ||
+    value.includes("united states virgin islands")
+  );
 }
 
 function normalizedNeedles(resolvedValue: ResolvedProfileValue): string[] {
@@ -3367,6 +3475,16 @@ function getSelectionControlRole(field: Element | null): "combobox" | "listbox" 
     return "combobox";
   }
 
+  if (
+    field instanceof HTMLInputElement &&
+    (field.hasAttribute("aria-expanded") ||
+      field.hasAttribute("aria-controls") ||
+      normalizeText(getFieldPlaceholder(field)) === "select" ||
+      normalizeText(field.value) === "select")
+  ) {
+    return "combobox";
+  }
+
   return null;
 }
 
@@ -3520,6 +3638,12 @@ function getAssociatedOptionElements(field: HTMLElement): HTMLElement[] {
   }
 
   containers.push(...associatedByReference);
+
+  if (field.getAttribute("aria-expanded") === "true") {
+    containers.push(
+      ...queryAllDocuments<HTMLElement>("[role='listbox']").filter(isVisibleElement)
+    );
+  }
 
   return dedupeElements(
     containers

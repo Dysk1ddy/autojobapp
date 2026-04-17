@@ -321,10 +321,16 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "require sponsorship",
       "need sponsorship",
       "visa sponsorship",
-      "sponsorship required"
+      "sponsorship required",
+      "immigration related employment benefit",
+      "h 1b visa petition",
+      "f 1 visa",
+      "o 1 visa petition",
+      "e 3 visa petition",
+      "tn status"
     ],
     preferredTags: ["select", "input"],
-    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text", "combobox", "listbox"],
     getValue: (profile) =>
       textValue(toSentenceCase(profile.workAuthorization.requiresSponsorship))
   },
@@ -334,11 +340,16 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     synonyms: [
       "future sponsorship",
       "now or in the future require sponsorship",
+      "will you now or in the future require sponsorship",
       "future visa sponsorship",
-      "in the future require sponsorship"
+      "in the future require sponsorship",
+      "sponsorship for an immigration related employment benefit",
+      "immigration related employment benefit",
+      "job flexibility benefits",
+      "adjustment of status portability"
     ],
     preferredTags: ["select", "input"],
-    preferredInputTypes: ["radio", "checkbox", "select", "text"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text", "combobox", "listbox"],
     getValue: (profile) =>
       textValue(toSentenceCase(profile.workAuthorization.requiresFutureSponsorship))
   },
@@ -517,6 +528,24 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       textValue(toSentenceCase(profile.workAuthorization.boardDirectorPlans))
   },
   {
+    key: "workAuthorization.availabilityDate",
+    label: "Availability after offer",
+    synonyms: [
+      "when would you be available",
+      "available if an offer was accepted",
+      "availability after offer",
+      "availability date",
+      "when can you start",
+      "earliest start date",
+      "start date availability",
+      "available start date",
+      "notice period"
+    ],
+    preferredTags: ["select", "input", "textarea"],
+    preferredInputTypes: ["radio", "checkbox", "select", "text", "textarea", "combobox", "listbox"],
+    getValue: (profile) => textValue(profile.workAuthorization.availabilityDate)
+  },
+  {
     key: "documents.resume",
     label: "Resume upload",
     synonyms: ["resume", "cv", "upload resume", "attach resume"],
@@ -590,8 +619,8 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "work authorization question",
       "need sponsorship"
     ],
-    preferredTags: ["textarea", "input", "select"],
-    disallowedInputTypes: ["radio", "checkbox"],
+    preferredTags: ["textarea", "input"],
+    disallowedInputTypes: ["radio", "checkbox", "select", "combobox", "listbox"],
     getValue: (profile) => templateValue(profile, "sponsorship")
   }
 ];

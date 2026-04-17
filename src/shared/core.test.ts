@@ -86,7 +86,8 @@ describe("shouldFillConfidence", () => {
           terminationHistory: "no",
           friendsOrRelativesAtCompany: "no",
           exportControlCitizenship: "no",
-          boardDirectorPlans: "no"
+          boardDirectorPlans: "no",
+          availabilityDate: "2 weeks after offer"
         }
       }),
       createDefaultApplicantProfile()
@@ -97,5 +98,6 @@ describe("shouldFillConfidence", () => {
     expect(imported.workAuthorization.selfIdentificationLanguage).toBe("English");
     expect(imported.workAuthorization.canVerifyLegalWorkRight).toBe("yes");
     expect(imported.workAuthorization.boardDirectorPlans).toBe("no");
+    expect(imported.workAuthorization.availabilityDate).toBe("2 weeks after offer");
   });
 });

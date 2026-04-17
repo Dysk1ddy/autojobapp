@@ -326,6 +326,37 @@ describe("fillPage", () => {
     expect(result.fill.results[0]?.fillSource).toBe("ai");
   });
 
+  it("fills US phone fields without forcing the +1 country prefix", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          Phone number
+          <input type="tel" name="phone" autocomplete="tel" />
+        </label>
+      </form>
+    `;
+
+    const phoneInput = document.querySelector('input[name="phone"]') as HTMLInputElement;
+
+    phoneInput.addEventListener("change", () => {
+      if (phoneInput.value.includes("+")) {
+        phoneInput.value = "";
+      }
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.contact.country = "United States";
+    profile.contact.phone = "+1 (415) 555-1234";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/phone",
+      title: "Phone Number"
+    });
+
+    expect(phoneInput.value).toBe("4155551234");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("fills a contenteditable textbox using a template-backed answer", async () => {
     document.body.innerHTML = `
       <form>
@@ -411,6 +442,65 @@ describe("fillPage", () => {
     });
 
     expect(combobox.textContent).toContain("United States");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("prefers the mainland United States option over +1 territory partial matches", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label id="country-priority-label">Country</label>
+        <div
+          id="country-priority-combobox"
+          role="combobox"
+          tabindex="0"
+          aria-labelledby="country-priority-label"
+          aria-controls="country-priority-options"
+          data-value="+1 United States Minor Outlying Islands"
+        >+1 United States Minor Outlying Islands</div>
+        <div id="country-priority-options" role="listbox" hidden>
+          <div id="country-option-um" role="option">+1 United States Minor Outlying Islands</div>
+          <div id="country-option-us" role="option">+1 United States</div>
+        </div>
+      </form>
+    `;
+
+    const combobox = document.getElementById(
+      "country-priority-combobox"
+    ) as HTMLDivElement;
+    const listbox = document.getElementById(
+      "country-priority-options"
+    ) as HTMLDivElement;
+    const options = Array.from(
+      listbox.querySelectorAll<HTMLElement>('[role="option"]')
+    );
+
+    const openListbox = () => {
+      listbox.hidden = false;
+    };
+
+    combobox.addEventListener("click", openListbox);
+    combobox.addEventListener("keydown", openListbox);
+    options.forEach((option) => {
+      option.addEventListener("click", () => {
+        options.forEach((candidate) => {
+          candidate.setAttribute("aria-selected", candidate === option ? "true" : "false");
+        });
+        combobox.textContent = option.textContent;
+        combobox.setAttribute("data-value", option.textContent ?? "");
+        combobox.setAttribute("aria-activedescendant", option.id);
+        listbox.hidden = true;
+      });
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.contact.country = "United States";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/country-priority",
+      title: "Country Priority"
+    });
+
+    expect(combobox.textContent).toBe("+1 United States");
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
@@ -593,6 +683,98 @@ describe("fillPage", () => {
     });
 
     expect(input.value).toBe("No");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("selects no for long immigration sponsorship combobox questions rendered in a portal", async () => {
+    document.body.innerHTML = `
+      <form>
+        <fieldset>
+          <label id="sponsorship-benefit-label" for="sponsorship-benefit-combobox">
+            Will you now or in the future require sponsorship for an immigration-related employment benefit? For purposes of this question, sponsorship for an immigration-related employment benefit means an H-1B visa petition, F-1 visa, an O-1 visa petition, an E-3 visa petition, TN status and job flexibility benefits.
+          </label>
+          <input
+            id="sponsorship-benefit-combobox"
+            type="text"
+            aria-labelledby="sponsorship-benefit-label"
+            aria-expanded="false"
+            placeholder="Select"
+            value="Select"
+          />
+        </fieldset>
+        <div id="floating-root"></div>
+      </form>
+    `;
+
+    const input = document.getElementById("sponsorship-benefit-combobox") as HTMLInputElement;
+    const floatingRoot = document.getElementById("floating-root") as HTMLDivElement;
+
+    input.addEventListener("click", () => {
+      input.setAttribute("aria-expanded", "true");
+      floatingRoot.innerHTML = `
+        <ul role="listbox">
+          <li role="presentation"><button type="button" role="option">Yes</button></li>
+          <li role="presentation"><button type="button" role="option">No</button></li>
+        </ul>
+      `;
+
+      Array.from(floatingRoot.querySelectorAll<HTMLButtonElement>("[role='option']")).forEach(
+        (option) => {
+          option.addEventListener("click", () => {
+            input.value = option.textContent?.trim() ?? "";
+            input.dataset.committed = "true";
+            input.setAttribute("aria-expanded", "false");
+            floatingRoot.innerHTML = "";
+          });
+        }
+      );
+    });
+
+    input.addEventListener("blur", () => {
+      if (input.dataset.committed !== "true") {
+        input.value = "Select";
+      }
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.requiresFutureSponsorship = "unknown";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/immigration-sponsorship",
+      title: "Immigration Sponsorship"
+    });
+
+    expect(input.value).toBe("No");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills availability after offer fields from the saved profile value", async () => {
+    document.body.innerHTML = `
+      <form>
+        <label>
+          When would you be available if an offer was accepted?
+          <select name="offer_availability">
+            <option value="">Select</option>
+            <option>Immediately</option>
+            <option>2 weeks after offer</option>
+            <option>1 month after offer</option>
+          </select>
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.availabilityDate = "2 weeks after offer";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/availability",
+      title: "Offer Availability"
+    });
+
+    expect(
+      (document.querySelector('select[name="offer_availability"]') as HTMLSelectElement)
+        .value
+    ).toBe("2 weeks after offer");
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 

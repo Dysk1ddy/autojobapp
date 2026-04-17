@@ -1676,6 +1676,15 @@ function OptionsApp() {
                 }
               />
               <TextField
+                className="field-span-2"
+                label="Availability after accepted offer"
+                helper="Use the exact wording you want filled, such as Immediately, 2 weeks after offer, or a specific date."
+                value={draftProfile.workAuthorization.availabilityDate}
+                onChange={(value) =>
+                  updateWorkAuthorizationField("availabilityDate", value)
+                }
+              />
+              <TextField
                 label="Clearance status"
                 value={draftProfile.workAuthorization.clearanceStatus}
                 onChange={(value) =>

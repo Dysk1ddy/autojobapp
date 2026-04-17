@@ -82,6 +82,7 @@ export const PROFILE_FIELD_KEYS = [
   "workAuthorization.friendsOrRelativesAtCompany",
   "workAuthorization.exportControlCitizenship",
   "workAuthorization.boardDirectorPlans",
+  "workAuthorization.availabilityDate",
   "documents.resume",
   "documents.coverLetter",
   "templates.cover-note",
@@ -329,6 +330,7 @@ export interface WorkAuthorizationDetails {
   friendsOrRelativesAtCompany: YesNoUnknown;
   exportControlCitizenship: YesNoUnknown;
   boardDirectorPlans: YesNoUnknown;
+  availabilityDate: string;
   clearanceStatus: string;
 }
 
@@ -462,7 +464,7 @@ export type ContentResponse =
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 export const DEFAULT_PROFILE_ID = "primary-profile";
 export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
 
@@ -552,7 +554,7 @@ export function createDefaultApplicantProfile(
     },
     contact: {
       email: "taylor.applicant@example.com",
-      phone: "+1 555-0100",
+      phone: "415-555-1234",
       addressLine1: "123 Example Street",
       addressLine2: "Apartment 5B",
       city: "New York",
@@ -660,6 +662,7 @@ export function createDefaultApplicantProfile(
       friendsOrRelativesAtCompany: "unknown",
       exportControlCitizenship: "unknown",
       boardDirectorPlans: "unknown",
+      availabilityDate: "",
       clearanceStatus: "None"
     },
     documents: {
@@ -1406,6 +1409,10 @@ function normalizeWorkAuthorization(
     boardDirectorPlans: normalizeYesNoUnknown(
       record?.boardDirectorPlans,
       fallback.boardDirectorPlans
+    ),
+    availabilityDate: readString(
+      record?.availabilityDate,
+      fallback.availabilityDate
     ),
     clearanceStatus: readString(
       record?.clearanceStatus,
