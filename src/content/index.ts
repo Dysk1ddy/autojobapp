@@ -74,6 +74,8 @@ const FILL_HIGHLIGHT_STYLE_ID = "autojobapp-fill-style";
 const FILL_HIGHLIGHT_CLASS = "autojobapp-fill-flash";
 const FILL_SETTLE_DELAY_MS = 180;
 const FILL_VERIFICATION_MAX_ATTEMPTS = 2;
+const CUSTOM_SELECTION_OPTION_POLL_ATTEMPTS = 6;
+const CUSTOM_SELECTION_OPTION_POLL_DELAY_MS = 90;
 const BUTTON_CHOICE_SELECTOR = [
   "button[aria-pressed]",
   "[role='button'][aria-pressed]",
@@ -1353,7 +1355,7 @@ async function fillDisabilitySignatureNameField(
     return null;
   }
 
-  const fullName = profile.personal.fullName.trim();
+  const fullName = resolveProfileLegalFullName(profile);
 
   if (!fullName) {
     return buildResult(
@@ -1441,12 +1443,14 @@ function isDisabilitySignatureNameField(
       match.nearbyText,
       match.matchedLabel,
       group.candidate.sectionHeading,
-      group.candidate.nearbyText
+      group.candidate.nearbyText,
+      extractBroaderFieldContext(primaryElement)
     ].join(" ")
   );
+  const searchable = normalizeText([fieldIdentity, sectionText].join(" "));
 
   return (
-    looksLikeDisabilitySelfIdentificationSection(sectionText) &&
+    looksLikeDisabilitySelfIdentificationSection(searchable) &&
     looksLikeSignatureNameIdentity(fieldIdentity)
   );
 }
@@ -1462,6 +1466,21 @@ function looksLikeSignatureNameIdentity(searchable: string): boolean {
     searchable.includes("signed by") ||
     searchable.includes("type your name") ||
     searchable.includes("typed name")
+  );
+}
+
+function resolveProfileLegalFullName(profile: ApplicantProfile): string {
+  const explicitFullName = cleanText(profile.personal.fullName);
+
+  if (explicitFullName) {
+    return explicitFullName;
+  }
+
+  return cleanText(
+    [profile.personal.firstName, profile.personal.lastName]
+      .map((value) => cleanText(value))
+      .filter(Boolean)
+      .join(" ")
   );
 }
 
@@ -2182,6 +2201,8 @@ async function fillSelectControl(
 
       element.focus();
       setNativeSelectValue(element, option.value);
+      option.selected = true;
+      element.selectedIndex = option.index;
       dispatchEvents(element, ["input", "change", "blur"]);
       highlightFilledElement(element);
       return true;
@@ -2275,27 +2296,22 @@ async function fillCustomSelectionControl(
       }
 
       openCustomSelectionControl(element);
-      await waitForDomUpdate(120);
-
-      let option = findMatchingCustomOption(element, normalizedValues);
-
-      if (!option && targetValue && isTextFillControl(element)) {
-        element.focus();
-        setTextControlValue(element, targetValue);
-        dispatchEvents(element, ["input", "change"]);
-        dispatchKeyboardEvent(element, "ArrowDown");
-        await waitForDomUpdate(160);
-        option = findMatchingCustomOption(element, normalizedValues);
-      }
+      const option = await waitForMatchingCustomOption(
+        element,
+        normalizedValues,
+        targetValue
+      );
 
       if (option) {
         activateCustomOption(element, option);
-        await waitForDomUpdate(120);
+        await waitForDomUpdate(100);
 
         if (!doesCustomSelectionMatchValue(element, resolvedValue)) {
           commitCustomSelectionFallback(element, option, targetValue);
+          await waitForDomUpdate(60);
         }
 
+        closeCustomSelectionControl(element);
         highlightFilledElement(element);
         highlightFilledElement(option);
         return true;
@@ -2305,13 +2321,11 @@ async function fillCustomSelectionControl(
         return false;
       }
 
-      element.focus();
-      setTextControlValue(element, targetValue);
-      dispatchEvents(element, ["input", "change"]);
+      typeIntoCustomSelectionControl(element, targetValue);
       dispatchKeyboardEvent(element, "ArrowDown");
       await waitForDomUpdate(80);
       dispatchKeyboardEvent(element, "Enter");
-      dispatchEvents(element, ["blur"]);
+      closeCustomSelectionControl(element);
       highlightFilledElement(element);
       return true;
     },
@@ -2964,21 +2978,37 @@ function isBinaryYesNoPolicyField(
 }
 
 function looksLikeDisabilitySelfIdentificationSection(searchable: string): boolean {
-  if (!searchable.includes("disability")) {
+  if (!searchable) {
     return false;
   }
 
-  return (
+  const hasDisabilityAnchor =
+    searchable.includes("disability") ||
+    searchable.includes("form cc") ||
+    searchable.includes("cc 305") ||
+    searchable.includes("cc305") ||
+    searchable.includes("cc-305") ||
+    searchable.includes("individual with a disability") ||
+    searchable.includes("have a disability") ||
+    searchable.includes("disability status");
+  const hasSelfIdentificationSignal =
     searchable.includes("self identification") ||
     searchable.includes("self identify") ||
     searchable.includes("self-identification") ||
     searchable.includes("self-identify") ||
-    searchable.includes("form cc") ||
-    searchable.includes("cc 305") ||
-    searchable.includes("cc-305") ||
-    searchable.includes("individual with a disability") ||
-    searchable.includes("have a disability") ||
-    searchable.includes("disability status")
+    searchable.includes("self id") ||
+    searchable.includes("self-id") ||
+    searchable.includes("voluntary self identification") ||
+    searchable.includes("voluntary self identify") ||
+    searchable.includes("voluntary self id") ||
+    searchable.includes("voluntary self-id");
+
+  return (
+    (hasDisabilityAnchor && hasSelfIdentificationSignal) ||
+    searchable.includes("form cc 305") ||
+    searchable.includes("standard form cc 305") ||
+    searchable.includes("voluntary self identification form") ||
+    searchable.includes("voluntary self-identification form")
   );
 }
 
@@ -3231,23 +3261,88 @@ function doesCustomSelectionMatchValue(
       option.getAttribute("aria-checked") === "true" ||
       option.getAttribute("data-selected") === "true"
     )
-    .map((option) => cleanText(option.textContent || option.getAttribute("aria-label")));
+    .flatMap((option) => [
+      cleanText(option.textContent || option.getAttribute("aria-label")),
+      cleanText(option.getAttribute("data-value") || option.getAttribute("value"))
+    ]);
   const activeDescendantText = cleanText(
     resolveAriaReferenceElement(element, "aria-activedescendant")?.textContent
+  );
+  const backingFieldValues = getCustomSelectionBackingFields(element).flatMap((field) =>
+    getSelectionFieldTokens(field)
   );
   const currentTokens = [
     element.getAttribute("aria-valuetext"),
     element.getAttribute("data-value"),
     activeDescendantText,
     ...selectedOptionText,
+    ...backingFieldValues,
     readTextControlValue(element)
   ]
     .map((value) => normalizeText(value ?? ""))
     .filter(Boolean);
 
-  return normalizedValues.some((needle) =>
+  const matched = normalizedValues.some((needle) =>
     currentTokens.some((token) => doesNormalizedOptionTokenMatch(token, needle))
   );
+
+  if (!matched) {
+    return false;
+  }
+
+  const requiredFields = [
+    ...(isRequiredField(element as FormControl) ? [element] : []),
+    ...getCustomSelectionBackingFields(element).filter((field) => isRequiredField(field))
+  ];
+
+  return requiredFields.every((field) => !isSelectionFieldValueMissing(field));
+}
+
+function getSelectionFieldTokens(
+  field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+): string[] {
+  if (field instanceof HTMLSelectElement) {
+    return [
+      cleanText(field.value),
+      cleanText(field.selectedOptions[0]?.textContent),
+      cleanText(field.selectedOptions[0]?.value)
+    ].filter(Boolean);
+  }
+
+  return [cleanText(field.value)].filter(Boolean);
+}
+
+function isSelectionFieldValueMissing(
+  field: HTMLElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+): boolean {
+  if (
+    field instanceof HTMLInputElement ||
+    field instanceof HTMLSelectElement ||
+    field instanceof HTMLTextAreaElement
+  ) {
+    if (field instanceof HTMLSelectElement) {
+      return (
+        !cleanText(field.value) ||
+        isPlaceholderLikeSelectionValue(field.value) ||
+        field.validity?.valueMissing === true
+      );
+    }
+
+    return !cleanText(field.value);
+  }
+
+  const currentValue = cleanText(
+    field.getAttribute("aria-valuetext") ||
+      field.getAttribute("data-value") ||
+      field.textContent
+  );
+
+  return !currentValue || isPlaceholderLikeSelectionValue(currentValue);
+}
+
+function isPlaceholderLikeSelectionValue(value: string): boolean {
+  const normalized = normalizeText(value);
+  return ["select", "choose", "choose one", "please select"].includes(normalized);
 }
 
 function setTextControlValue(
@@ -3281,10 +3376,59 @@ function readTextControlValue(element: FormControl): string {
 }
 
 function openCustomSelectionControl(element: HTMLElement): void {
+  element.scrollIntoView?.({ block: "center", inline: "nearest" });
   element.focus();
+  dispatchPointerLikeEvent(element, "pointerdown");
   element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  dispatchPointerLikeEvent(element, "pointerup");
+  element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   element.click();
   dispatchKeyboardEvent(element, "ArrowDown");
+}
+
+function closeCustomSelectionControl(element: HTMLElement): void {
+  dispatchEvents(element, ["blur"]);
+}
+
+function typeIntoCustomSelectionControl(element: HTMLElement, targetValue: string): void {
+  if (!targetValue || !isTextFillControl(element as FormControl)) {
+    return;
+  }
+
+  element.focus();
+  setTextControlValue(element as FormControl, targetValue);
+  dispatchEvents(element, ["input", "change"]);
+}
+
+async function waitForMatchingCustomOption(
+  element: HTMLElement,
+  normalizedValues: string[],
+  targetValue: string
+): Promise<HTMLElement | null> {
+  let typedSearch = false;
+
+  for (
+    let attempt = 0;
+    attempt < CUSTOM_SELECTION_OPTION_POLL_ATTEMPTS;
+    attempt += 1
+  ) {
+    const option = findMatchingCustomOption(element, normalizedValues);
+
+    if (option) {
+      return option;
+    }
+
+    if (!typedSearch && targetValue && isTextFillControl(element as FormControl)) {
+      typeIntoCustomSelectionControl(element, targetValue);
+      typedSearch = true;
+    } else if (attempt > 0 && element.getAttribute("aria-expanded") === "false") {
+      openCustomSelectionControl(element);
+    }
+
+    await waitForDomUpdate(CUSTOM_SELECTION_OPTION_POLL_DELAY_MS);
+  }
+
+  return findMatchingCustomOption(element, normalizedValues);
 }
 
 function findMatchingCustomOption(
@@ -3324,8 +3468,10 @@ function getCustomOptionTokens(option: HTMLElement): string[] {
     option.textContent,
     option.getAttribute("aria-label"),
     option.getAttribute("data-value"),
+    option.getAttribute("data-key"),
     option.getAttribute("data-label"),
     option.getAttribute("value"),
+    option.getAttribute("aria-valuetext"),
     option.getAttribute("title")
   ]
     .map((value) => normalizeText(cleanText(value)))
@@ -3352,9 +3498,10 @@ function commitCustomSelectionFallback(
   const optionText = cleanText(
     option.textContent || option.getAttribute("aria-label") || targetValue
   );
-  const value = optionText || targetValue;
+  const committedValue = getCustomOptionCommittedValue(option, optionText || targetValue);
+  const visibleValue = optionText || targetValue || committedValue;
 
-  if (!value) {
+  if (!visibleValue && !committedValue) {
     return;
   }
 
@@ -3378,14 +3525,143 @@ function commitCustomSelectionFallback(
     control.setAttribute("aria-activedescendant", option.id);
   }
 
-  control.setAttribute("aria-valuetext", value);
-  control.setAttribute("data-value", value);
-
-  if (isTextFillControl(control as FormControl)) {
-    setTextControlValue(control as FormControl, value);
+  if (visibleValue) {
+    control.setAttribute("aria-valuetext", visibleValue);
   }
 
+  if (committedValue) {
+    control.setAttribute("data-value", committedValue);
+  }
+
+  if (isTextFillControl(control as FormControl)) {
+    setTextControlValue(control as FormControl, visibleValue || committedValue);
+  } else {
+    const valueContainer =
+      control.querySelector<HTMLElement>(
+        "[data-value-label], [data-selected-label], [class*='value'], [class*='selected'], span"
+      ) ?? control;
+
+    valueContainer.textContent = visibleValue || committedValue;
+  }
+
+  syncCustomSelectionBackingFields(control, committedValue, visibleValue || committedValue);
   dispatchEvents(control, ["input", "change", "blur"]);
+}
+
+function getCustomOptionCommittedValue(
+  option: HTMLElement,
+  fallbackValue: string
+): string {
+  return cleanText(
+    option.getAttribute("data-value") ||
+      option.getAttribute("value") ||
+      option.getAttribute("data-key") ||
+      option.getAttribute("aria-valuetext") ||
+      fallbackValue
+  );
+}
+
+function syncCustomSelectionBackingFields(
+  control: HTMLElement,
+  committedValue: string,
+  visibleValue: string
+): void {
+  const fields = getCustomSelectionBackingFields(control);
+  const preferredValues = [committedValue, visibleValue].filter(Boolean);
+
+  fields.forEach((field) => {
+    if (field instanceof HTMLSelectElement) {
+      const option = findMatchingOption(
+        field.options,
+        preferredValues.flatMap((value) => expandNormalizedNeedles(normalizeText(value)))
+      );
+
+      if (!option) {
+        return;
+      }
+
+      field.focus();
+      setNativeSelectValue(field, option.value);
+      Array.from(field.options).forEach((candidate) => {
+        candidate.selected = candidate === option;
+      });
+      dispatchEvents(field, ["input", "change", "blur"]);
+      return;
+    }
+
+    field.focus();
+    setTextControlValue(field, committedValue || visibleValue);
+    dispatchEvents(field, ["input", "change", "blur"]);
+  });
+}
+
+function getCustomSelectionBackingFields(
+  control: HTMLElement
+): Array<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> {
+  const container = resolveSelectionFieldContainer(control);
+
+  if (!container) {
+    return [];
+  }
+
+  return dedupeElements(
+    Array.from(
+      container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        "input, select, textarea"
+      )
+    ).filter(
+      (field) =>
+        field !== control &&
+        field.isConnected &&
+        isPotentialSelectionBackingField(field)
+    )
+  );
+}
+
+function resolveSelectionFieldContainer(control: HTMLElement): HTMLElement | null {
+  return (
+    control.closest(
+      [
+        "[data-question-id]",
+        "[data-testid*='field']",
+        "[data-testid*='input']",
+        "[data-testid*='select']",
+        "[data-automation-id='formField']",
+        ".select-wrapper",
+        ".field",
+        ".question",
+        ".form-field",
+        "label"
+      ].join(", ")
+    ) ??
+    control.parentElement
+  );
+}
+
+function isPotentialSelectionBackingField(
+  field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+): boolean {
+  if (field instanceof HTMLSelectElement) {
+    return true;
+  }
+
+  if (field instanceof HTMLTextAreaElement) {
+    return field.hasAttribute("hidden") || field.getAttribute("aria-hidden") === "true";
+  }
+
+  const type = field.type.toLowerCase();
+
+  if (["radio", "checkbox", "file", "button", "submit", "reset"].includes(type)) {
+    return false;
+  }
+
+  return (
+    type === "hidden" ||
+    field.hasAttribute("hidden") ||
+    field.getAttribute("aria-hidden") === "true" ||
+    field.readOnly ||
+    field.tabIndex < 0
+  );
 }
 
 function dispatchPointerLikeEvent(element: HTMLElement, type: string): void {
@@ -4099,6 +4375,10 @@ function getPageFields(): FormControl[] {
       "[role='textbox']",
       "[role='combobox']",
       "[role='listbox']",
+      "button[aria-haspopup='listbox']",
+      "button[aria-expanded][aria-controls]",
+      "[role='button'][aria-haspopup='listbox']",
+      "[role='button'][aria-expanded][aria-controls]",
       "[role='radio']",
       "[role='checkbox']",
       BUTTON_CHOICE_SELECTOR,
@@ -4452,6 +4732,19 @@ function extractNearbyText(field: FormControl): string {
   return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
+function extractBroaderFieldContext(field: HTMLElement): string {
+  const container =
+    field.closest("fieldset, section, article, form, [role='group']") ??
+    field.parentElement;
+  const text = cleanText(container?.textContent);
+
+  if (!text) {
+    return "";
+  }
+
+  return text.length > 320 ? `${text.slice(0, 317)}...` : text;
+}
+
 function extractOptionLabels(field: FormControl): string[] {
   if (field instanceof HTMLSelectElement) {
     return Array.from(field.options)
@@ -4581,6 +4874,7 @@ function isCustomFieldElement(field: HTMLElement): field is CustomFormControl {
     role === "listbox" ||
     role === "radio" ||
     role === "checkbox" ||
+    Boolean(getSelectionControlRole(field)) ||
     isButtonChoiceControl(field)
   );
 }
@@ -4655,6 +4949,15 @@ function getSelectionControlRole(field: Element | null): "combobox" | "listbox" 
   }
 
   if (
+    field.hasAttribute("aria-expanded") &&
+    (field.hasAttribute("aria-controls") ||
+      popupType === "menu" ||
+      looksLikeSelectionTrigger(field))
+  ) {
+    return "combobox";
+  }
+
+  if (
     field instanceof HTMLInputElement &&
     (field.hasAttribute("aria-expanded") ||
       field.hasAttribute("aria-controls") ||
@@ -4665,6 +4968,28 @@ function getSelectionControlRole(field: Element | null): "combobox" | "listbox" 
   }
 
   return null;
+}
+
+function looksLikeSelectionTrigger(field: HTMLElement): boolean {
+  const searchable = normalizeText(
+    [
+      field.getAttribute("data-testid"),
+      field.getAttribute("data-qa"),
+      field.getAttribute("data-automation-id"),
+      field.getAttribute("class"),
+      field.getAttribute("aria-label"),
+      field.getAttribute("title"),
+      field.textContent
+    ].join(" ")
+  );
+
+  return (
+    searchable.includes("select") ||
+    searchable.includes("dropdown") ||
+    searchable.includes("combobox") ||
+    searchable.includes("autocomplete") ||
+    searchable.includes("listbox")
+  );
 }
 
 function resolveCurrentGroupElements(group: CandidateGroup): FormControl[] {
@@ -4828,13 +5153,18 @@ function getAssociatedOptionElements(field: HTMLElement): HTMLElement[] {
     [
       "[role='listbox']",
       "[role='menu']",
+      "[role='dialog'] [role='listbox']",
       "[data-testid*='listbox']",
       "[data-testid*='dropdown']",
       "[data-testid*='menu']",
+      "[id*='listbox']",
+      "[id*='menu']",
       "[class*='listbox']",
       "[class*='dropdown']",
+      "[class*='menu']",
       "[class*='select-menu']",
-      "[class*='popover']"
+      "[class*='popover']",
+      "[class*='popper']"
     ].join(", ")
   ).filter(isVisibleElement);
 
@@ -4856,8 +5186,11 @@ function getPotentialOptionElements(container: HTMLElement): HTMLElement[] {
         "[role='option']",
         "[role='radio']",
         "[role='menuitem']",
+        "[aria-selected]",
+        "[aria-checked]",
         "[data-value]",
         "[data-option]",
+        "[data-option-index]",
         "[data-testid*='option']",
         "[class*='option']",
         "button",

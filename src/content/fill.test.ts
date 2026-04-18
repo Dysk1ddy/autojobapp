@@ -820,6 +820,137 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
+  it("syncs hidden backing values for button-triggered custom dropdowns", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="field" data-testid="availability-field">
+          <label id="availability-label">When would you be available if an offer was accepted?</label>
+          <button
+            type="button"
+            id="availability-trigger"
+            aria-labelledby="availability-label availability-value"
+            aria-haspopup="listbox"
+            aria-controls="availability-options"
+            aria-expanded="false"
+          >
+            <span id="availability-value">Select</span>
+          </button>
+          <input type="hidden" name="availability_hidden" required value="" />
+          <ul id="availability-options" role="listbox" hidden>
+            <li role="option" data-value="immediately">Immediately</li>
+            <li role="option" data-value="2weeks">2 weeks after offer</li>
+            <li role="option" data-value="1month">1 month after offer</li>
+          </ul>
+        </div>
+      </form>
+    `;
+
+    const trigger = document.getElementById("availability-trigger") as HTMLButtonElement;
+    const valueLabel = document.getElementById("availability-value") as HTMLSpanElement;
+    const hiddenInput = document.querySelector(
+      'input[name="availability_hidden"]'
+    ) as HTMLInputElement;
+    const listbox = document.getElementById("availability-options") as HTMLUListElement;
+
+    trigger.addEventListener("click", () => {
+      trigger.setAttribute("aria-expanded", "true");
+      listbox.hidden = false;
+    });
+
+    listbox.querySelectorAll<HTMLElement>('[role="option"]').forEach((option) => {
+      option.addEventListener("click", () => {
+        valueLabel.textContent = option.textContent ?? "";
+        trigger.setAttribute("aria-valuetext", option.textContent ?? "");
+        trigger.setAttribute("aria-expanded", "false");
+        listbox.hidden = true;
+      });
+    });
+
+    trigger.addEventListener("blur", () => {
+      if (!hiddenInput.value) {
+        valueLabel.textContent = "Select";
+        trigger.setAttribute("aria-valuetext", "Select");
+      }
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.availabilityDate = "2 weeks after offer";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/button-dropdown-backing",
+      title: "Button Dropdown Backing"
+    });
+
+    expect(valueLabel.textContent).toBe("2 weeks after offer");
+    expect(hiddenInput.value).toBe("2weeks");
+    expect(trigger.getAttribute("data-value")).toBe("2weeks");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("waits for delayed portal options in button-triggered dropdowns", async () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="field" data-testid="language-field">
+          <label id="language-label">Self Identification Language</label>
+          <button
+            type="button"
+            id="language-trigger"
+            aria-labelledby="language-label language-value"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span id="language-value">Select</span>
+          </button>
+          <input type="hidden" name="self_identification_language" value="" />
+        </div>
+        <div id="language-portal"></div>
+      </form>
+    `;
+
+    const trigger = document.getElementById("language-trigger") as HTMLButtonElement;
+    const valueLabel = document.getElementById("language-value") as HTMLSpanElement;
+    const hiddenInput = document.querySelector(
+      'input[name="self_identification_language"]'
+    ) as HTMLInputElement;
+    const portal = document.getElementById("language-portal") as HTMLDivElement;
+
+    trigger.addEventListener("click", () => {
+      trigger.setAttribute("aria-expanded", "true");
+
+      window.setTimeout(() => {
+        portal.innerHTML = `
+          <ul role="listbox">
+            <li role="option" data-value="spanish">Spanish</li>
+            <li role="option" data-value="english">English</li>
+          </ul>
+        `;
+
+        portal.querySelectorAll<HTMLElement>('[role="option"]').forEach((option) => {
+          option.addEventListener("click", () => {
+            valueLabel.textContent = option.textContent ?? "";
+            hiddenInput.value = option.dataset.value ?? "";
+            trigger.setAttribute("aria-valuetext", option.textContent ?? "");
+            trigger.setAttribute("data-value", option.dataset.value ?? "");
+            trigger.setAttribute("aria-expanded", "false");
+            portal.innerHTML = "";
+          });
+        });
+      }, 220);
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.workAuthorization.selfIdentificationLanguage = "English";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/button-dropdown-portal",
+      title: "Button Dropdown Portal"
+    });
+
+    expect(valueLabel.textContent).toBe("English");
+    expect(hiddenInput.value).toBe("english");
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
+  });
+
   it("fills availability after offer fields from the saved profile value", async () => {
     document.body.innerHTML = `
       <form>
@@ -1309,6 +1440,50 @@ describe("fillPage", () => {
     expect(nameInput.value).toBe(profile.personal.fullName);
     expect(nameChanged).toBe(true);
     expect(result.fill.filled).toBeGreaterThanOrEqual(2);
+  });
+
+  it("fills nested disability signature name fields using broader section context", async () => {
+    document.body.innerHTML = `
+      <form>
+        <section>
+          <div class="intro">
+            <h2>Voluntary Self-Identification Form</h2>
+            <p>Standard Form CC-305 collects disability status information.</p>
+          </div>
+          <div class="signature-shell">
+            <div class="signature-row">
+              <label for="disability_signature_name_nested">Name</label>
+              <div class="input-shell">
+                <input id="disability_signature_name_nested" name="disability_signature_name_nested" required />
+              </div>
+              <div role="alert">Name cannot be left blank.</div>
+            </div>
+          </div>
+        </section>
+      </form>
+    `;
+
+    let nameBlurred = false;
+    const nameInput = document.querySelector(
+      'input[name="disability_signature_name_nested"]'
+    ) as HTMLInputElement;
+    nameInput.addEventListener("blur", () => {
+      nameBlurred = true;
+    });
+
+    const profile = createDefaultApplicantProfile();
+    profile.personal.fullName = "";
+
+    const result = await fillPage(profile, {
+      href: "https://jobs.example.com/apply/disability-signature-nested",
+      title: "Disability Signature Nested"
+    });
+
+    expect(nameInput.value).toBe(
+      `${profile.personal.firstName} ${profile.personal.lastName}`
+    );
+    expect(nameBlurred).toBe(true);
+    expect(result.fill.filled).toBeGreaterThanOrEqual(1);
   });
 
   it("fills disability self-identification dropdowns with the configured profile value", async () => {
