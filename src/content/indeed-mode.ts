@@ -2,12 +2,12 @@ import {
   ApplicantProfile,
   DocumentReference,
   ExtensionSettings,
-  HandshakeModeStatus
+  IndeedModeStatus
 } from "../shared/core";
 
-type HandshakeApplyOutcome = "applied" | "skipped" | "failed";
+type IndeedApplyOutcome = "applied" | "skipped" | "failed";
 
-interface HandshakeJobCard {
+interface IndeedJobCard {
   id: string;
   element: HTMLElement;
   link: HTMLAnchorElement;
@@ -15,8 +15,8 @@ interface HandshakeJobCard {
   href: string;
 }
 
-interface HandshakeApplyResult {
-  outcome: HandshakeApplyOutcome;
+interface IndeedApplyResult {
+  outcome: IndeedApplyOutcome;
   message: string;
   title: string;
 }
@@ -26,16 +26,16 @@ interface ResumeReadyResult {
   message: string;
 }
 
-interface HandshakeModeController {
+interface IndeedModeController {
   active: boolean;
   stopRequested: boolean;
   attemptedJobIds: Set<string>;
-  runPromise: Promise<HandshakeModeStatus> | null;
-  status: HandshakeModeStatus;
+  runPromise: Promise<IndeedModeStatus> | null;
+  status: IndeedModeStatus;
 }
 
-interface HandshakeRunOptions {
-  controller?: HandshakeModeController;
+interface IndeedRunOptions {
+  controller?: IndeedModeController;
   maxIdleRounds?: number;
   actionDelayMs?: number;
   surfaceTimeoutMs?: number;
@@ -43,11 +43,11 @@ interface HandshakeRunOptions {
 
 declare global {
   interface Window {
-    __AUTO_JOB_APP_HANDSHAKE_MODE__?: HandshakeModeController;
+    __AUTO_JOB_APP_INDEED_MODE__?: IndeedModeController;
   }
 }
 
-const HANDSHAKE_OVERLAY_ID = "autojobapp-handshake-mode-overlay";
+const INDEED_OVERLAY_ID = "autojobapp-indeed-mode-overlay";
 const ACTION_CONTROL_SELECTOR = [
   "button",
   "[role='button']",
@@ -56,10 +56,12 @@ const ACTION_CONTROL_SELECTOR = [
   "input[type='submit']"
 ].join(", ");
 const APPLICATION_SURFACE_SELECTOR = [
+  "#ia-container",
+  "[id*='ia-container']",
+  "[data-testid*='indeed-apply']",
+  "[data-testid*='ia-']",
   "[role='dialog']",
   "[aria-modal='true']",
-  "[data-testid*='modal']",
-  "[data-test-id*='modal']",
   "[class*='modal']",
   "[class*='Modal']",
   ".modal"
@@ -76,30 +78,30 @@ const DEFAULT_ACTION_DELAY_MS = 650;
 const DEFAULT_SURFACE_TIMEOUT_MS = 4500;
 const DEFAULT_MAX_IDLE_ROUNDS = 3;
 
-export async function toggleHandshakeMode(
+export async function toggleIndeedMode(
   profile: ApplicantProfile,
   settings: ExtensionSettings
-): Promise<HandshakeModeStatus> {
-  const controller = getHandshakeController();
+): Promise<IndeedModeStatus> {
+  const controller = getIndeedController();
 
   if (controller.active) {
     controller.stopRequested = true;
     controller.status = {
       ...controller.status,
       active: false,
-      message: "Handshake mode is stopping after the current job."
+      message: "Indeed mode is stopping after the current job."
     };
-    renderHandshakeOverlay(controller.status);
+    renderIndeedOverlay(controller.status);
     return controller.status;
   }
 
-  if (!isHandshakeHostname(window.location.hostname)) {
+  if (!isIndeedHostname(window.location.hostname)) {
     controller.status = {
       ...createInitialStatus(),
       active: false,
-      message: "Handshake mode only runs on app.joinhandshake.com pages."
+      message: "Indeed mode only runs on indeed.com pages."
     };
-    renderHandshakeOverlay(controller.status);
+    renderIndeedOverlay(controller.status);
     return controller.status;
   }
 
@@ -109,15 +111,15 @@ export async function toggleHandshakeMode(
   controller.status = {
     ...createInitialStatus(),
     active: true,
-    message: "Handshake mode started. Press the shortcut again to stop."
+    message: "Indeed mode started. Press the shortcut again to stop."
   };
-  renderHandshakeOverlay(controller.status);
+  renderIndeedOverlay(controller.status);
 
-  controller.runPromise = runHandshakeMode(profile, settings, { controller }).finally(
+  controller.runPromise = runIndeedMode(profile, settings, { controller }).finally(
     () => {
       controller.active = false;
       controller.stopRequested = false;
-      renderHandshakeOverlay(controller.status);
+      renderIndeedOverlay(controller.status);
     }
   );
 
@@ -126,20 +128,20 @@ export async function toggleHandshakeMode(
       ...controller.status,
       active: false,
       failed: controller.status.failed + 1,
-      message: `Handshake mode stopped: ${toErrorMessage(error)}`
+      message: `Indeed mode stopped: ${toErrorMessage(error)}`
     };
-    renderHandshakeOverlay(controller.status);
+    renderIndeedOverlay(controller.status);
   });
 
   return controller.status;
 }
 
-export async function runHandshakeMode(
+export async function runIndeedMode(
   profile: ApplicantProfile,
-  settings: ExtensionSettings,
-  options: HandshakeRunOptions = {}
-): Promise<HandshakeModeStatus> {
-  const controller = options.controller ?? createHandshakeController();
+  _settings: ExtensionSettings,
+  options: IndeedRunOptions = {}
+): Promise<IndeedModeStatus> {
+  const controller = options.controller ?? createIndeedController();
   const maxIdleRounds = options.maxIdleRounds ?? DEFAULT_MAX_IDLE_ROUNDS;
   const actionDelayMs = options.actionDelayMs ?? DEFAULT_ACTION_DELAY_MS;
   const surfaceTimeoutMs =
@@ -151,17 +153,17 @@ export async function runHandshakeMode(
   controller.status = {
     ...controller.status,
     active: true,
-    message: "Scanning visible Handshake jobs..."
+    message: "Scanning visible Indeed jobs..."
   };
-  renderHandshakeOverlay(controller.status);
+  renderIndeedOverlay(controller.status);
 
   while (!controller.stopRequested) {
-    const cards = collectHandshakeJobCards().filter(
+    const cards = collectIndeedJobCards().filter(
       (card) => !controller.attemptedJobIds.has(card.id)
     );
 
     if (cards.length === 0) {
-      const moved = await moveToMoreHandshakeJobs(actionDelayMs);
+      const moved = await moveToMoreIndeedJobs(actionDelayMs);
 
       if (!moved) {
         idleRounds += 1;
@@ -172,7 +174,7 @@ export async function runHandshakeMode(
       if (idleRounds >= maxIdleRounds) {
         controller.status = {
           ...controller.status,
-          message: "Handshake mode finished. No more unvisited jobs were found."
+          message: "Indeed mode finished. No more unvisited jobs were found."
         };
         break;
       }
@@ -192,19 +194,18 @@ export async function runHandshakeMode(
         ...controller.status,
         visited: controller.status.visited + 1,
         lastJobTitle: card.title,
-        message: `Opening ${card.title || "next Handshake job"}...`
+        message: `Opening ${card.title || "next Indeed job"}...`
       };
-      renderHandshakeOverlay(controller.status);
+      renderIndeedOverlay(controller.status);
 
-      await activateHandshakeJobCard(card, actionDelayMs);
+      await activateIndeedJobCard(card, actionDelayMs);
 
-      const result = await tryApplyToCurrentHandshakeJob(profile, {
-        settings,
+      const result = await tryApplyToCurrentIndeedJob(profile, {
         surfaceTimeoutMs,
         actionDelayMs
       });
-      controller.status = reduceHandshakeStatus(controller.status, result);
-      renderHandshakeOverlay(controller.status);
+      controller.status = reduceIndeedStatus(controller.status, result);
+      renderIndeedOverlay(controller.status);
       await delay(actionDelayMs);
     }
   }
@@ -216,13 +217,13 @@ export async function runHandshakeMode(
     active: false,
     message:
       controller.status.message ||
-      "Handshake mode stopped. Press the shortcut to start again."
+      "Indeed mode stopped. Press the shortcut to start again."
   };
-  renderHandshakeOverlay(controller.status);
+  renderIndeedOverlay(controller.status);
   return controller.status;
 }
 
-export function isHandshakeEasyApplyControl(control: HTMLElement): boolean {
+export function isIndeedEasyApplyControl(control: HTMLElement): boolean {
   if (!isVisibleActionControl(control) || isDisabledControl(control)) {
     return false;
   }
@@ -231,7 +232,7 @@ export function isHandshakeEasyApplyControl(control: HTMLElement): boolean {
     return false;
   }
 
-  if (isInsideHandshakeJobResult(control)) {
+  if (isInsideIndeedJobResult(control)) {
     return false;
   }
 
@@ -242,6 +243,9 @@ export function isHandshakeEasyApplyControl(control: HTMLElement): boolean {
   }
 
   if (
+    text.includes("company site") ||
+    text.includes("company website") ||
+    text.includes("employer site") ||
     text.includes("external") ||
     text.includes("externally") ||
     text.includes("applied") ||
@@ -251,40 +255,40 @@ export function isHandshakeEasyApplyControl(control: HTMLElement): boolean {
     return false;
   }
 
-  if (isExternalHandshakeHref(resolveControlHref(control))) {
-    return false;
-  }
-
   return (
-    text === "apply" ||
     text === "apply now" ||
-    text === "quick apply" ||
-    text.includes("quick apply")
+    text.includes("apply now") ||
+    text === "easily apply" ||
+    text.includes("easily apply")
   );
 }
 
-export function findHandshakeEasyApplyControl(
-  root: ParentNode = document
+export function findIndeedEasyApplyControl(
+  root: ParentNode = findIndeedJobDetailRoot() ?? document
 ): HTMLElement | null {
   return (
     queryAll<HTMLElement>(ACTION_CONTROL_SELECTOR, root).find(
-      isHandshakeEasyApplyControl
+      isIndeedEasyApplyControl
     ) ?? null
   );
 }
 
-export function isHandshakeApplicationSurfaceEasy(surface: HTMLElement): boolean {
+export function isIndeedApplicationSurfaceEasy(surface: HTMLElement): boolean {
   const surfaceText = normalizeText(cleanText(surface.textContent));
 
   if (!surfaceText) {
     return false;
   }
 
-  if (surfaceText.includes("apply externally")) {
+  if (
+    surfaceText.includes("apply on company site") ||
+    surfaceText.includes("company website") ||
+    surfaceText.includes("external site")
+  ) {
     return false;
   }
 
-  if (hasUnsupportedDocumentPrompt(surfaceText)) {
+  if (hasUnsupportedIndeedPrompt(surfaceText)) {
     return false;
   }
 
@@ -293,21 +297,20 @@ export function isHandshakeApplicationSurfaceEasy(surface: HTMLElement): boolean
   }
 
   return Boolean(
-    findSubmitApplicationControl(surface, {
-      includeDisabled: true
-    })
+    findSubmitApplicationControl(surface, { includeDisabled: true }) ||
+      findContinueControl(surface)
   );
 }
 
-function getHandshakeController(): HandshakeModeController {
-  if (!window.__AUTO_JOB_APP_HANDSHAKE_MODE__) {
-    window.__AUTO_JOB_APP_HANDSHAKE_MODE__ = createHandshakeController();
+function getIndeedController(): IndeedModeController {
+  if (!window.__AUTO_JOB_APP_INDEED_MODE__) {
+    window.__AUTO_JOB_APP_INDEED_MODE__ = createIndeedController();
   }
 
-  return window.__AUTO_JOB_APP_HANDSHAKE_MODE__;
+  return window.__AUTO_JOB_APP_INDEED_MODE__;
 }
 
-function createHandshakeController(): HandshakeModeController {
+function createIndeedController(): IndeedModeController {
   return {
     active: false,
     stopRequested: false,
@@ -317,7 +320,7 @@ function createHandshakeController(): HandshakeModeController {
   };
 }
 
-function createInitialStatus(): HandshakeModeStatus {
+function createInitialStatus(): IndeedModeStatus {
   return {
     active: false,
     applied: 0,
@@ -329,10 +332,10 @@ function createInitialStatus(): HandshakeModeStatus {
   };
 }
 
-function reduceHandshakeStatus(
-  status: HandshakeModeStatus,
-  result: HandshakeApplyResult
-): HandshakeModeStatus {
+function reduceIndeedStatus(
+  status: IndeedModeStatus,
+  result: IndeedApplyResult
+): IndeedModeStatus {
   const nextStatus = {
     ...status,
     lastJobTitle: result.title,
@@ -358,33 +361,35 @@ function reduceHandshakeStatus(
   }
 }
 
-function collectHandshakeJobCards(): HandshakeJobCard[] {
+function collectIndeedJobCards(): IndeedJobCard[] {
   const links = queryAll<HTMLAnchorElement>(
-    "a[href*='/job-search/'], a[href*='/jobs/']"
+    "a[href*='viewjob'], a[href*='jk='], a[data-jk]"
   );
   const cards = links
     .map((link) => {
-      const id = extractHandshakeJobId(link.href);
+      const id = extractIndeedJobId(link.href || link.getAttribute("data-jk") || "");
 
-      if (!id || !isHandshakeJobNavigationLink(link)) {
+      if (!id || !isIndeedJobNavigationLink(link)) {
         return null;
       }
 
       const element =
         link.closest<HTMLElement>(
-          "li, article, [role='listitem'], [data-testid*='job'], [data-test-id*='job'], [class*='job'], [class*='Job']"
+          "[data-jk], .job_seen_beacon, li, article, [role='listitem'], [data-testid*='job'], [class*='job'], [class*='Job']"
         ) ?? link;
-      const title = clipText(cleanText(element.textContent || link.textContent), 96);
+      const title =
+        clipText(cleanText(link.textContent), 96) ||
+        clipText(cleanText(element.querySelector("h2, [role='heading']")?.textContent), 96);
 
       return {
         id,
         element,
         link,
-        title: title || `Handshake job ${id}`,
+        title: title || `Indeed job ${id}`,
         href: link.href
-      } satisfies HandshakeJobCard;
+      } satisfies IndeedJobCard;
     })
-    .filter((card): card is HandshakeJobCard => Boolean(card))
+    .filter((card): card is IndeedJobCard => Boolean(card))
     .filter((card) => isVisibleElement(card.element));
 
   const uniqueCards = dedupeBy(cards, (card) => card.id);
@@ -393,7 +398,7 @@ function collectHandshakeJobCards(): HandshakeJobCard[] {
     return uniqueCards;
   }
 
-  const currentJobId = extractHandshakeJobId(window.location.href);
+  const currentJobId = extractIndeedJobId(window.location.href);
 
   if (!currentJobId) {
     return [];
@@ -404,14 +409,16 @@ function collectHandshakeJobCards(): HandshakeJobCard[] {
       id: currentJobId,
       element: document.body,
       link: createSyntheticCurrentJobLink(currentJobId),
-      title: clipText(cleanText(document.title), 96) || `Handshake job ${currentJobId}`,
+      title: clipText(cleanText(document.title), 96) || `Indeed job ${currentJobId}`,
       href: window.location.href
     }
   ];
 }
 
-function isHandshakeJobNavigationLink(link: HTMLAnchorElement): boolean {
-  if (!extractHandshakeJobId(link.href) || isExternalHandshakeHref(link.href)) {
+function isIndeedJobNavigationLink(link: HTMLAnchorElement): boolean {
+  const id = extractIndeedJobId(link.href || link.getAttribute("data-jk") || "");
+
+  if (!id || isExternalIndeedHref(link.href)) {
     return false;
   }
 
@@ -420,8 +427,8 @@ function isHandshakeJobNavigationLink(link: HTMLAnchorElement): boolean {
   if (
     text === "apply" ||
     text === "apply now" ||
-    text === "quick apply" ||
-    text.includes("apply externally") ||
+    text === "easily apply" ||
+    text.includes("apply on company") ||
     text === "next" ||
     text.includes("next page")
   ) {
@@ -430,7 +437,8 @@ function isHandshakeJobNavigationLink(link: HTMLAnchorElement): boolean {
 
   try {
     const url = new URL(link.href, window.location.href);
-    return !url.pathname.toLowerCase().includes("/apply");
+    const path = url.pathname.toLowerCase();
+    return !path.includes("apply") && !path.includes("company");
   } catch {
     return false;
   }
@@ -439,20 +447,35 @@ function isHandshakeJobNavigationLink(link: HTMLAnchorElement): boolean {
 function createSyntheticCurrentJobLink(currentJobId: string): HTMLAnchorElement {
   const link = document.createElement("a");
   link.href = window.location.href;
-  link.textContent = `Handshake job ${currentJobId}`;
+  link.textContent = `Indeed job ${currentJobId}`;
   return link;
 }
 
-function extractHandshakeJobId(href: string): string {
-  const match = href.match(/\/(?:job-search|jobs)\/(\d+)/i);
-  return match?.[1] ?? "";
+function extractIndeedJobId(value: string): string {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(value, window.location.href);
+    const jk = url.searchParams.get("jk");
+
+    if (jk) {
+      return jk;
+    }
+  } catch {
+    // Continue with the regex fallback.
+  }
+
+  const match = value.match(/[?&]jk=([^&#]+)|data-jk=["']?([^"'\s&]+)/i);
+  return decodeURIComponent(match?.[1] ?? match?.[2] ?? "");
 }
 
-async function activateHandshakeJobCard(
-  card: HandshakeJobCard,
+async function activateIndeedJobCard(
+  card: IndeedJobCard,
   actionDelayMs: number
 ): Promise<void> {
-  const currentJobId = extractHandshakeJobId(window.location.href);
+  const currentJobId = extractIndeedJobId(window.location.href);
 
   if (currentJobId && currentJobId === card.id) {
     return;
@@ -463,19 +486,18 @@ async function activateHandshakeJobCard(
     inline: "nearest"
   });
   card.link.focus();
-  clickInternalHandshakeLink(card.link);
+  clickInternalIndeedLink(card.link);
   await delay(actionDelayMs);
 }
 
-async function tryApplyToCurrentHandshakeJob(
+async function tryApplyToCurrentIndeedJob(
   profile: ApplicantProfile,
   options: {
-    settings: ExtensionSettings;
     surfaceTimeoutMs: number;
     actionDelayMs: number;
   }
-): Promise<HandshakeApplyResult> {
-  const title = getCurrentHandshakeJobTitle();
+): Promise<IndeedApplyResult> {
+  const title = getCurrentIndeedJobTitle();
 
   if (hasSubmittedApplicationSignal()) {
     return {
@@ -485,39 +507,39 @@ async function tryApplyToCurrentHandshakeJob(
     };
   }
 
-  const applyControl = findHandshakeEasyApplyControl();
+  const applyControl = findIndeedEasyApplyControl();
 
   if (!applyControl) {
     return {
       outcome: "skipped",
       title,
-      message: `${title} was skipped because no in-Handshake easy apply button was found.`
+      message: `${title} was skipped because no Indeed Easy Apply button was found.`
     };
   }
 
   applyControl.focus();
   applyControl.click();
 
-  const surface = await waitForApplicationSurface(options.surfaceTimeoutMs);
+  let surface = await waitForApplicationSurface(options.surfaceTimeoutMs);
 
   if (!surface) {
     return {
       outcome: "failed",
       title,
-      message: `${title} could not be submitted because the Handshake apply dialog did not open.`
+      message: `${title} could not be submitted because the Indeed apply surface did not open.`
     };
   }
 
-  if (!isHandshakeApplicationSurfaceEasy(surface)) {
+  if (!isIndeedApplicationSurfaceEasy(surface)) {
     closeApplicationSurface(surface);
     return {
       outcome: "skipped",
       title,
-      message: `${title} was skipped because the application asked for more than a resume-only Handshake submit.`
+      message: `${title} was skipped because the application asked for more than a resume-only Indeed submit.`
     };
   }
 
-  const resumeReady = await ensureHandshakeResumeReady(
+  let resumeReady = await ensureIndeedResumeReady(
     surface,
     profile,
     options.actionDelayMs
@@ -532,7 +554,44 @@ async function tryApplyToCurrentHandshakeJob(
     };
   }
 
-  const submitControl = findSubmitApplicationControl(surface);
+  let submitControl = findSubmitApplicationControl(surface);
+
+  if (!submitControl) {
+    const continueControl = findContinueControl(surface);
+
+    if (continueControl) {
+      continueControl.focus();
+      continueControl.click();
+      await delay(options.actionDelayMs);
+      surface = findApplicationSurface() ?? surface;
+
+      if (!isIndeedApplicationSurfaceEasy(surface)) {
+        closeApplicationSurface(surface);
+        return {
+          outcome: "skipped",
+          title,
+          message: `${title} was skipped because a later Indeed step asked for extra information.`
+        };
+      }
+
+      resumeReady = await ensureIndeedResumeReady(
+        surface,
+        profile,
+        options.actionDelayMs
+      );
+
+      if (!resumeReady.ok) {
+        closeApplicationSurface(surface);
+        return {
+          outcome: "failed",
+          title,
+          message: `${title} could not be submitted: ${resumeReady.message}`
+        };
+      }
+
+      submitControl = findSubmitApplicationControl(surface);
+    }
+  }
 
   if (!submitControl || isDisabledControl(submitControl)) {
     closeApplicationSurface(surface);
@@ -555,18 +614,18 @@ async function tryApplyToCurrentHandshakeJob(
     return {
       outcome: "failed",
       title,
-      message: `${title} submit was clicked, but Handshake did not show a submission confirmation.`
+      message: `${title} submit was clicked, but Indeed did not show a submission confirmation.`
     };
   }
 
   return {
     outcome: "applied",
     title,
-    message: `${title} was submitted through Handshake.`
+    message: `${title} was submitted through Indeed.`
   };
 }
 
-async function ensureHandshakeResumeReady(
+async function ensureIndeedResumeReady(
   surface: HTMLElement,
   profile: ApplicantProfile,
   actionDelayMs: number
@@ -584,15 +643,15 @@ async function ensureHandshakeResumeReady(
     return {
       ok: true,
       message: hasResumePrompt
-        ? "Handshake already has a resume selected."
-        : "Handshake did not require a resume for this application."
+        ? "Indeed already has a resume selected."
+        : "Indeed did not require a resume for this application."
     };
   }
 
   if (!hasResumePrompt) {
     return {
       ok: true,
-      message: "Handshake did not require documents for this application."
+      message: "Indeed did not require documents for this application."
     };
   }
 
@@ -624,19 +683,23 @@ async function ensureHandshakeResumeReady(
   await delay(actionDelayMs);
 
   const submitControl = findSubmitApplicationControl(surface);
+  const continueControl = findContinueControl(surface);
 
-  if (submitControl && !isDisabledControl(submitControl)) {
+  if (
+    (submitControl && !isDisabledControl(submitControl)) ||
+    (continueControl && !isDisabledControl(continueControl))
+  ) {
     return {
       ok: true,
       message: changed
-        ? "Selected the resume document for Handshake."
-        : "Handshake had a usable resume selection."
+        ? "Selected the resume document for Indeed."
+        : "Indeed had a usable resume selection."
     };
   }
 
   return {
     ok: false,
-    message: "Handshake still requires a resume selection before submit."
+    message: "Indeed still requires a resume selection before submit."
   };
 }
 
@@ -883,10 +946,24 @@ function findSubmitApplicationControl(
       const text = normalizeText(getActionControlText(control));
 
       return (
+        text.includes("submit your application") ||
         text.includes("submit application") ||
         text.includes("send application") ||
         (text === "submit" && rootText.includes("application"))
       );
+    }) ?? null
+  );
+}
+
+function findContinueControl(root: ParentNode = document): HTMLElement | null {
+  return (
+    queryAll<HTMLElement>(ACTION_CONTROL_SELECTOR, root).find((control) => {
+      if (!isVisibleActionControl(control) || isDisabledControl(control)) {
+        return false;
+      }
+
+      const text = normalizeText(getActionControlText(control));
+      return text === "continue" || text.includes("continue to");
     }) ?? null
   );
 }
@@ -906,10 +983,11 @@ function findApplicationSurface(): HTMLElement | null {
 
       const text = normalizeText(cleanText(surface.textContent));
       return (
+        text.includes("submit your application") ||
         text.includes("submit application") ||
         text.includes("resume") ||
         text.includes("cv") ||
-        text.includes("additional document")
+        text.includes("indeed apply")
       );
     }
   );
@@ -928,7 +1006,7 @@ function findApplicationSurface(): HTMLElement | null {
   );
 }
 
-function hasUnsupportedDocumentPrompt(surfaceText: string): boolean {
+function hasUnsupportedIndeedPrompt(surfaceText: string): boolean {
   return [
     "cover letter",
     "transcript",
@@ -936,7 +1014,11 @@ function hasUnsupportedDocumentPrompt(surfaceText: string): boolean {
     "portfolio document",
     "other document",
     "references",
-    "additional required document"
+    "additional required document",
+    "employer questions",
+    "questions from the employer",
+    "answer these questions",
+    "answer the following questions"
   ].some((term) => surfaceText.includes(term));
 }
 
@@ -1017,25 +1099,28 @@ function hasSubmittedApplicationSignal(): boolean {
     text.includes("application submitted") ||
     text.includes("you applied") ||
     text.includes("applied on") ||
-    text.includes("application received")
+    text.includes("application received") ||
+    text.includes("your application has been submitted")
   );
 }
 
-function getCurrentHandshakeJobTitle(): string {
+function getCurrentIndeedJobTitle(): string {
+  const detailRoot = findIndeedJobDetailRoot();
   const heading = cleanText(
-    document.querySelector("h1, h2, [role='heading']")?.textContent
+    detailRoot?.querySelector("h1, h2, [role='heading']")?.textContent ??
+      document.querySelector("h1, h2, [role='heading']")?.textContent
   );
 
   if (heading) {
     return clipText(heading, 96);
   }
 
-  return clipText(cleanText(document.title), 96) || "Handshake job";
+  return clipText(cleanText(document.title), 96) || "Indeed job";
 }
 
-async function moveToMoreHandshakeJobs(actionDelayMs: number): Promise<boolean> {
-  const cards = collectHandshakeJobCards();
-  const scrolled = scrollHandshakeJobList(cards);
+async function moveToMoreIndeedJobs(actionDelayMs: number): Promise<boolean> {
+  const cards = collectIndeedJobCards();
+  const scrolled = scrollIndeedJobList(cards);
 
   if (scrolled) {
     await delay(actionDelayMs);
@@ -1049,12 +1134,12 @@ async function moveToMoreHandshakeJobs(actionDelayMs: number): Promise<boolean> 
   }
 
   nextPage.focus();
-  clickInternalHandshakeLink(nextPage);
+  clickInternalIndeedLink(nextPage);
   await delay(actionDelayMs);
   return true;
 }
 
-function scrollHandshakeJobList(cards: HandshakeJobCard[]): boolean {
+function scrollIndeedJobList(cards: IndeedJobCard[]): boolean {
   const scrollContainer = findScrollableJobContainer(cards);
 
   if (!scrollContainer) {
@@ -1079,9 +1164,7 @@ function scrollHandshakeJobList(cards: HandshakeJobCard[]): boolean {
   return scrollContainer.scrollTop !== before;
 }
 
-function findScrollableJobContainer(
-  cards: HandshakeJobCard[]
-): HTMLElement | null {
+function findScrollableJobContainer(cards: IndeedJobCard[]): HTMLElement | null {
   for (const card of cards) {
     let current = card.element.parentElement;
 
@@ -1109,13 +1192,33 @@ function findNextPageControl(): HTMLElement | null {
         return false;
       }
 
-      const text = normalizeText(getActionControlText(control));
+      const text = normalizeText(
+        [
+          getActionControlText(control),
+          control.getAttribute("aria-label"),
+          control.getAttribute("title")
+        ].join(" ")
+      );
       return text === "next" || text.includes("next page");
     }) ?? null
   );
 }
 
-function clickInternalHandshakeLink(control: HTMLElement): boolean {
+function findIndeedJobDetailRoot(): HTMLElement | null {
+  return (
+    queryAll<HTMLElement>(
+      [
+        "#jobsearch-ViewjobPaneWrapper",
+        "[data-testid='jobsearch-JobComponent']",
+        "[data-testid*='jobsearch-Job']",
+        "[aria-label*='Job details']",
+        "[class*='jobsearch-ViewJobLayout']"
+      ].join(", ")
+    ).find(isVisibleElement) ?? null
+  );
+}
+
+function clickInternalIndeedLink(control: HTMLElement): boolean {
   const link =
     control instanceof HTMLAnchorElement
       ? control
@@ -1126,7 +1229,7 @@ function clickInternalHandshakeLink(control: HTMLElement): boolean {
     return true;
   }
 
-  if (isExternalHandshakeHref(link.href)) {
+  if (isExternalIndeedHref(link.href)) {
     return false;
   }
 
@@ -1179,11 +1282,11 @@ function closeApplicationSurface(surface: HTMLElement): void {
   );
 }
 
-function renderHandshakeOverlay(status: HandshakeModeStatus): void {
-  const existing = document.getElementById(HANDSHAKE_OVERLAY_ID);
+function renderIndeedOverlay(status: IndeedModeStatus): void {
+  const existing = document.getElementById(INDEED_OVERLAY_ID);
   const overlay = existing ?? document.createElement("div");
 
-  overlay.id = HANDSHAKE_OVERLAY_ID;
+  overlay.id = INDEED_OVERLAY_ID;
   overlay.setAttribute("role", "status");
   overlay.style.position = "fixed";
   overlay.style.right = "16px";
@@ -1198,7 +1301,7 @@ function renderHandshakeOverlay(status: HandshakeModeStatus): void {
   overlay.style.font = "13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
   overlay.style.pointerEvents = "none";
   overlay.textContent = [
-    status.active ? "Handshake mode running" : "Handshake mode stopped",
+    status.active ? "Indeed mode running" : "Indeed mode stopped",
     `Applied ${status.applied} | Skipped ${status.skipped} | Failed ${status.failed}`,
     status.message
   ]
@@ -1277,6 +1380,7 @@ function isSubmitOrCancelControl(element: HTMLElement): boolean {
   const text = normalizeText(getActionControlText(element));
   return (
     text.includes("submit") ||
+    text.includes("continue") ||
     text.includes("cancel") ||
     text.includes("close") ||
     text.includes("apply")
@@ -1300,17 +1404,9 @@ function getActionControlText(control: HTMLElement): string {
   );
 }
 
-function resolveControlHref(control: HTMLElement): string {
-  if (control instanceof HTMLAnchorElement) {
-    return control.href;
-  }
-
-  return control.closest<HTMLAnchorElement>("a[href]")?.href ?? "";
-}
-
-function isInsideHandshakeJobResult(element: HTMLElement): boolean {
+function isInsideIndeedJobResult(element: HTMLElement): boolean {
   const container = element.closest<HTMLElement>(
-    "li, article, [role='listitem'], [data-testid*='job'], [data-test-id*='job'], [class*='job'], [class*='Job']"
+    "[data-jk], .job_seen_beacon, li, article, [role='listitem'], [data-testid*='job'], [class*='job'], [class*='Job']"
   );
 
   if (!container || container.closest(APPLICATION_SURFACE_SELECTOR)) {
@@ -1318,26 +1414,27 @@ function isInsideHandshakeJobResult(element: HTMLElement): boolean {
   }
 
   return queryAll<HTMLAnchorElement>(
-    "a[href*='/job-search/'], a[href*='/jobs/']",
+    "a[href*='viewjob'], a[href*='jk='], a[data-jk]",
     container
-  ).some(isHandshakeJobNavigationLink);
+  ).some(isIndeedJobNavigationLink);
 }
 
-function isExternalHandshakeHref(href: string): boolean {
+function isExternalIndeedHref(href: string): boolean {
   if (!href) {
     return false;
   }
 
   try {
     const url = new URL(href, window.location.href);
-    return Boolean(url.hostname) && !isHandshakeHostname(url.hostname);
+    return Boolean(url.hostname) && !isIndeedHostname(url.hostname);
   } catch {
     return false;
   }
 }
 
-function isHandshakeHostname(hostname: string): boolean {
-  return hostname.toLowerCase().includes("joinhandshake.com");
+function isIndeedHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "indeed.com" || host.endsWith(".indeed.com");
 }
 
 async function waitForValue<T>(

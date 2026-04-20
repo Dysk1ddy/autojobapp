@@ -6,7 +6,9 @@
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://api.openai.com/*",
-    "https://app.joinhandshake.com/*"
+    "https://app.joinhandshake.com/*",
+    "https://indeed.com/*",
+    "https://*.indeed.com/*"
   ],
   "action": {
     "default_title": "AutoJobApp",
@@ -30,6 +32,13 @@
         "mac": "Command+Shift+H"
       },
       "description": "Toggle Handshake mode on the active job search page"
+    },
+    "toggle-indeed-mode": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+I",
+        "mac": "Command+Shift+I"
+      },
+      "description": "Toggle Indeed mode on the active job search page"
     }
   },
   "options_page": "options.html"

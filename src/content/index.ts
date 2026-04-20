@@ -24,6 +24,7 @@ import {
   resolvePlatformAdapter
 } from "./adapters";
 import { toggleHandshakeMode } from "./handshake-mode";
+import { toggleIndeedMode } from "./indeed-mode";
 import { detectApplicationWorkflow } from "./workflow";
 import {
   FieldScanCandidate,
@@ -198,6 +199,24 @@ if (
             sendResponse({
               ok: true,
               handshakeMode
+            } satisfies ContentResponse);
+          })
+          .catch((error) => {
+            sendResponse({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error)
+            } satisfies ContentResponse);
+          });
+
+        return true;
+      }
+
+      if (request.type === "JOB_APP_TOGGLE_INDEED_MODE") {
+        void toggleIndeedMode(request.profile, request.settings)
+          .then((indeedMode) => {
+            sendResponse({
+              ok: true,
+              indeedMode
             } satisfies ContentResponse);
           })
           .catch((error) => {

@@ -57,6 +57,11 @@ Handshake mode has its own toggle shortcut:
 - `Ctrl` + `Shift` + `H` on Windows/Linux
 - `Command` + `Shift` + `H` on macOS
 
+Indeed mode has its own toggle shortcut:
+
+- `Ctrl` + `Shift` + `I` on Windows/Linux
+- `Command` + `Shift` + `I` on macOS
+
 The shortcut can be changed in `chrome://extensions/shortcuts`.
 
 ## What the extension does
@@ -110,11 +115,12 @@ This policy is applied as a deterministic fallback for supported binary choice c
 - review-first behavior by default
 - fully auto override if you explicitly want AI-assisted fills to continue to final submit
 - Handshake mode for `app.joinhandshake.com` job search pages: it only clicks in-Handshake `Apply` or `Quick Apply` controls, skips `Apply Externally`, rejects applications that ask for cover letters/transcripts/extra questions, submits resume-only applications, then scrolls or advances through more listings until toggled off
+- Indeed mode for `indeed.com` job search pages: it only clicks in-page `Apply now` or `Easily apply` button controls, skips `Apply on company site`, rejects applications that ask for cover letters/additional questions, submits resume-only applications, then scrolls or advances through more listings until toggled off
 
 ### ATS and workflow support
 
 - generic fallback field detection
-- adapter-aware handling for Handshake, Greenhouse, Lever, Workday, and Dover flows
+- adapter-aware handling for Handshake, Indeed, Greenhouse, Lever, Workday, and Dover flows
 - adapter notes surfaced in scan summaries for debugging
 - workflow detection for likely current step, detected steps, and next actions
 

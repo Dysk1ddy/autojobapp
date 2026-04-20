@@ -24,6 +24,8 @@ export function resolvePlatformAdapter(hostname: string): PlatformAdapter {
   switch (platform) {
     case "handshake":
       return handshakeAdapter;
+    case "indeed":
+      return indeedAdapter;
     case "greenhouse":
       return greenhouseAdapter;
     case "lever":
@@ -93,6 +95,63 @@ const handshakeAdapter = createAdapter("handshake", "Handshake adapter", [
       "submit application",
       "resume",
       "quick apply",
+      "you applied"
+    ])
+});
+
+const indeedAdapter = createAdapter("indeed", "Indeed adapter", [
+  "Recognizes Indeed Easy Apply application surfaces and resume prompts.",
+  "Keeps Apply on company site redirects out of Indeed mode automation."
+], {
+  getLabel: (field) =>
+    firstText(
+      textFromClosest(
+        field,
+        "[role='dialog'], [aria-modal='true'], form, section, article, [data-testid*='resume'], [id*='ia-container']",
+        "label, legend, [role='heading'], h1, h2, h3, h4, p"
+      ),
+      referencedText(field, "aria-labelledby")
+    ),
+  getSectionHeading: (field) =>
+    firstText(
+      textFromClosest(
+        field,
+        "[role='dialog'], [aria-modal='true'], form, section, article, [id*='ia-container']",
+        "h1, h2, h3, h4, [role='heading'], legend"
+      ),
+      nearestHeadingText(field)
+    ),
+  getNearbyText: (field) =>
+    clippedText(
+      field.closest(
+        "[role='dialog'], [aria-modal='true'], [data-testid*='resume'], [id*='ia-container'], form, section, article, fieldset, div"
+      )?.textContent
+    ),
+  getOptionLabels: (field) =>
+    extractChoiceLabels(
+      field,
+      "[role='dialog'], [aria-modal='true'], form, section, article, fieldset"
+    ),
+  getSignals: (field) =>
+    dedupeStrings([
+      ...attributeTokens(field, ["data-testid", "data-test-id", "aria-label", "name", "id"]),
+      ...ancestorAttributeTokens(field, ["data-testid", "data-test-id", "id"], 5),
+      ...referencedTextTokens(field, "aria-describedby"),
+      ...referencedTextTokens(field, "aria-labelledby")
+    ]),
+  getGroupingKey: (field) =>
+    choiceGroupingKey(
+      field,
+      "[role='dialog'], [aria-modal='true'], form, fieldset, [role='group']",
+      ["data-testid", "data-test-id", "id"]
+    ),
+  getJobSignals: (pageText) =>
+    filterSignals(pageText, [
+      "easily apply",
+      "apply now",
+      "apply on company site",
+      "submit your application",
+      "resume",
       "you applied"
     ])
 });

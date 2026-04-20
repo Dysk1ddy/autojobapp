@@ -42,6 +42,12 @@ chrome.commands.onCommand.addListener((command) => {
       console.error("AutoJobApp Handshake mode shortcut failed:", error);
     });
   }
+
+  if (command === "toggle-indeed-mode") {
+    void toggleIndeedMode().catch((error) => {
+      console.error("AutoJobApp Indeed mode shortcut failed:", error);
+    });
+  }
 });
 
 chrome.runtime.onMessage.addListener(
@@ -95,6 +101,9 @@ async function handleRuntimeMessage(
 
     case "TOGGLE_HANDSHAKE_MODE":
       return toggleHandshakeMode();
+
+    case "TOGGLE_INDEED_MODE":
+      return toggleIndeedMode();
 
     case "UPDATE_SETTINGS":
       return {
@@ -317,6 +326,56 @@ async function toggleHandshakeMode(): Promise<RuntimeResponse> {
     ok: true,
     state,
     handshakeMode: response.handshakeMode
+  };
+}
+
+async function toggleIndeedMode(): Promise<RuntimeResponse> {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+
+  if (!tab?.id) {
+    return {
+      ok: false,
+      error: "No active tab was available for Indeed mode."
+    };
+  }
+
+  if (!isScannableUrl(tab.url)) {
+    return {
+      ok: false,
+      error: "Open an Indeed job search page before toggling Indeed mode."
+    };
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["content.js"]
+  });
+
+  const state = await readState();
+  const profile = getActiveProfile(state);
+  const contentRequest: ContentRequest = {
+    type: "JOB_APP_TOGGLE_INDEED_MODE",
+    profile,
+    settings: state.settings
+  };
+  const response = await sendContentMessage(tab.id, contentRequest);
+
+  if (!response.ok || !response.indeedMode) {
+    return {
+      ok: false,
+      error: response.ok
+        ? "The page did not return an Indeed mode status."
+        : response.error
+    };
+  }
+
+  return {
+    ok: true,
+    state,
+    indeedMode: response.indeedMode
   };
 }
 

@@ -53,6 +53,10 @@ describe("shouldFillConfidence", () => {
     expect(detectPlatformFromHostname("app.joinhandshake.com")).toBe("handshake");
   });
 
+  it("detects Indeed job pages as a first-class platform", () => {
+    expect(detectPlatformFromHostname("www.indeed.com")).toBe("indeed");
+  });
+
   it("imports a raw applicant profile JSON backup", () => {
     const profile = createDefaultApplicantProfile("restored-profile", "Restored");
     const imported = parseApplicantProfileJson(

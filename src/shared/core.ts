@@ -2,6 +2,7 @@ export type SupportedPlatform =
   | "generic"
   | "greenhouse"
   | "handshake"
+  | "indeed"
   | "lever"
   | "workday"
   | "dover"
@@ -163,6 +164,8 @@ export interface HandshakeModeStatus {
   message: string;
   lastJobTitle: string;
 }
+
+export type IndeedModeStatus = HandshakeModeStatus;
 
 export interface AiFieldSuggestion {
   fieldId: string;
@@ -437,6 +440,7 @@ export type RuntimeRequest =
   | { type: "SCAN_ACTIVE_TAB" }
   | { type: "FILL_ACTIVE_TAB" }
   | { type: "TOGGLE_HANDSHAKE_MODE" }
+  | { type: "TOGGLE_INDEED_MODE" }
   | { type: "UPDATE_SETTINGS"; settings: Partial<ExtensionSettings> }
   | {
       type: "VERIFY_OPENAI_KEY";
@@ -456,6 +460,7 @@ export type RuntimeResponse =
       scan?: ScanSummary;
       fill?: FillSummary;
       handshakeMode?: HandshakeModeStatus;
+      indeedMode?: IndeedModeStatus;
       resumeImport?: RuntimeResumeImportPayload;
       aiVerification?: AiVerificationSummary;
     }
@@ -474,6 +479,10 @@ export type ContentRequest = {
   type: "JOB_APP_TOGGLE_HANDSHAKE_MODE";
   profile: ApplicantProfile;
   settings: ExtensionSettings;
+} | {
+  type: "JOB_APP_TOGGLE_INDEED_MODE";
+  profile: ApplicantProfile;
+  settings: ExtensionSettings;
 };
 
 export type ContentResponse =
@@ -482,6 +491,7 @@ export type ContentResponse =
       scan?: ScanSummary;
       fill?: FillSummary;
       handshakeMode?: HandshakeModeStatus;
+      indeedMode?: IndeedModeStatus;
     }
   | { ok: false; error: string };
 
@@ -1029,6 +1039,10 @@ export function detectPlatformFromHostname(hostname: string): SupportedPlatform 
 
   if (host.includes("joinhandshake.com")) {
     return "handshake";
+  }
+
+  if (host === "indeed.com" || host.endsWith(".indeed.com")) {
+    return "indeed";
   }
 
   if (host.includes("greenhouse")) {
@@ -1920,6 +1934,7 @@ function normalizeSupportedPlatform(value: unknown): SupportedPlatform {
     case "generic":
     case "greenhouse":
     case "handshake":
+    case "indeed":
     case "lever":
     case "workday":
     case "taleo":

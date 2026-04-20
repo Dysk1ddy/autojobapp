@@ -4,52 +4,48 @@ import {
   createDefaultSettings
 } from "../shared/core";
 import {
-  findHandshakeEasyApplyControl,
-  isHandshakeApplicationSurfaceEasy,
-  isHandshakeEasyApplyControl,
-  runHandshakeMode
-} from "./handshake-mode";
+  findIndeedEasyApplyControl,
+  isIndeedApplicationSurfaceEasy,
+  isIndeedEasyApplyControl,
+  runIndeedMode
+} from "./indeed-mode";
 
-describe("Handshake mode", () => {
+describe("Indeed mode", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
-    document.head.innerHTML = "<title>Handshake Jobs</title>";
+    document.head.innerHTML = "<title>Indeed Jobs</title>";
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn()
     });
   });
 
-  it("detects in-Handshake apply buttons and rejects external apply controls", () => {
+  it("detects Indeed Easy Apply buttons and rejects external or link apply controls", () => {
     document.body.innerHTML = `
-      <button id="external">Apply Externally</button>
-      <a id="external-link" href="https://example-ats.com/apply">Apply</a>
-      <a id="new-tab-apply" href="https://app.joinhandshake.com/jobs/123/apply" target="_blank">Apply</a>
-      <button id="apply">Apply</button>
+      <button id="company-site">Apply on company site</button>
+      <a id="apply-link" href="https://www.indeed.com/applystart?jk=abc" target="_blank">
+        Apply now
+      </a>
+      <button id="apply-now">Apply now</button>
     `;
 
     expect(
-      isHandshakeEasyApplyControl(document.getElementById("external") as HTMLElement)
-    ).toBe(false);
-    expect(
-      isHandshakeEasyApplyControl(
-        document.getElementById("external-link") as HTMLElement
+      isIndeedEasyApplyControl(
+        document.getElementById("company-site") as HTMLElement
       )
     ).toBe(false);
     expect(
-      isHandshakeEasyApplyControl(
-        document.getElementById("new-tab-apply") as HTMLElement
-      )
+      isIndeedEasyApplyControl(document.getElementById("apply-link") as HTMLElement)
     ).toBe(false);
     expect(
-      isHandshakeEasyApplyControl(document.getElementById("apply") as HTMLElement)
+      isIndeedEasyApplyControl(document.getElementById("apply-now") as HTMLElement)
     ).toBe(true);
-    expect(findHandshakeEasyApplyControl()?.id).toBe("apply");
+    expect(findIndeedEasyApplyControl()?.id).toBe("apply-now");
   });
 
-  it("allows resume-only application dialogs and rejects extra document prompts", () => {
+  it("allows resume-only Indeed dialogs and rejects extra questions", () => {
     document.body.innerHTML = `
-      <div role="dialog" id="resume-only">
+      <div id="resume-only" role="dialog">
         <h2>Apply to Software Intern</h2>
         <label>
           Resume
@@ -58,43 +54,43 @@ describe("Handshake mode", () => {
             <option value="resume">Resume.pdf</option>
           </select>
         </label>
-        <button>Submit Application</button>
+        <button>Submit your application</button>
       </div>
-      <div role="dialog" id="cover-letter">
+      <div id="company-site-dialog" role="dialog">
         <h2>Apply to Product Intern</h2>
-        <p>Resume</p>
-        <p>Cover letter required</p>
-        <button>Submit Application</button>
+        <p>Apply on company site</p>
+        <button>Continue</button>
       </div>
-      <div role="dialog" id="question">
+      <div id="questions" role="dialog">
         <h2>Apply to Design Intern</h2>
         <p>Resume</p>
+        <p>Questions from the employer</p>
         <label>
           Why are you interested?
           <textarea required></textarea>
         </label>
-        <button>Submit Application</button>
+        <button>Submit your application</button>
       </div>
     `;
 
     expect(
-      isHandshakeApplicationSurfaceEasy(
+      isIndeedApplicationSurfaceEasy(
         document.getElementById("resume-only") as HTMLElement
       )
     ).toBe(true);
     expect(
-      isHandshakeApplicationSurfaceEasy(
-        document.getElementById("cover-letter") as HTMLElement
+      isIndeedApplicationSurfaceEasy(
+        document.getElementById("company-site-dialog") as HTMLElement
       )
     ).toBe(false);
     expect(
-      isHandshakeApplicationSurfaceEasy(
-        document.getElementById("question") as HTMLElement
+      isIndeedApplicationSurfaceEasy(
+        document.getElementById("questions") as HTMLElement
       )
     ).toBe(false);
   });
 
-  it("submits one resume-only Handshake job and then stops when no more jobs exist", async () => {
+  it("submits one resume-only Indeed Easy Apply job", async () => {
     const profile = createDefaultApplicantProfile();
     profile.documents.resume = {
       id: "resume-1",
@@ -111,15 +107,15 @@ describe("Handshake mode", () => {
     document.body.innerHTML = `
       <main>
         <ol>
-          <li class="job-card">
-            <a id="job-link" href="https://app.joinhandshake.com/job-search/101">
+          <li class="job_seen_beacon" data-jk="indeed-101">
+            <a id="job-link" href="https://www.indeed.com/viewjob?jk=indeed-101">
               Software Intern
             </a>
           </li>
         </ol>
-        <section id="job-detail">
+        <section id="jobsearch-ViewjobPaneWrapper">
           <h1>Software Intern</h1>
-          <button id="apply-button">Apply</button>
+          <button id="apply-button">Apply now</button>
         </section>
       </main>
     `;
@@ -129,6 +125,7 @@ describe("Handshake mode", () => {
     });
     document.getElementById("apply-button")?.addEventListener("click", () => {
       const dialog = document.createElement("div");
+      dialog.id = "ia-container";
       dialog.setAttribute("role", "dialog");
       dialog.innerHTML = `
         <h2>Apply to Software Intern</h2>
@@ -139,7 +136,7 @@ describe("Handshake mode", () => {
             <option value="resume">Resume.pdf</option>
           </select>
         </label>
-        <button id="submit-application" disabled>Submit Application</button>
+        <button id="submit-application" disabled>Submit your application</button>
         <button id="cancel-application">Cancel</button>
       `;
       document.body.appendChild(dialog);
@@ -156,12 +153,12 @@ describe("Handshake mode", () => {
         submitted = true;
         dialog.hidden = true;
         const confirmation = document.createElement("p");
-        confirmation.textContent = "Application submitted!";
+        confirmation.textContent = "Your application has been submitted";
         document.body.appendChild(confirmation);
       });
     });
 
-    const status = await runHandshakeMode(profile, createDefaultSettings(), {
+    const status = await runIndeedMode(profile, createDefaultSettings(), {
       maxIdleRounds: 1,
       actionDelayMs: 0,
       surfaceTimeoutMs: 100
@@ -181,27 +178,27 @@ describe("Handshake mode", () => {
     document.body.innerHTML = `
       <main>
         <ol>
-          <li class="job-card">
+          <li class="job_seen_beacon" data-jk="indeed-202">
             <a
               id="list-apply"
-              href="https://app.joinhandshake.com/jobs/202/apply"
+              href="https://www.indeed.com/applystart?jk=indeed-202"
               target="_blank"
             >
-              Apply
+              Apply now
             </a>
-            <a id="job-link" href="https://app.joinhandshake.com/job-search/202">
+            <a id="job-link" href="https://www.indeed.com/viewjob?jk=indeed-202">
               Backend Intern
             </a>
           </li>
         </ol>
-        <section id="job-detail">
+        <section id="jobsearch-ViewjobPaneWrapper">
           <h1>Backend Intern</h1>
           <a
             id="detail-apply"
-            href="https://app.joinhandshake.com/jobs/202/apply"
+            href="https://www.indeed.com/applystart?jk=indeed-202"
             target="_blank"
           >
-            Apply
+            Apply now
           </a>
         </section>
       </main>
@@ -217,7 +214,7 @@ describe("Handshake mode", () => {
       applyAnchorClicks += 1;
     });
 
-    const status = await runHandshakeMode(profile, createDefaultSettings(), {
+    const status = await runIndeedMode(profile, createDefaultSettings(), {
       maxIdleRounds: 1,
       actionDelayMs: 0,
       surfaceTimeoutMs: 50

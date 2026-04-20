@@ -162,6 +162,34 @@ function PopupApp() {
     }
   }
 
+  async function toggleIndeedMode() {
+    setBusy(true);
+    setStatus("Toggling Indeed mode on the active tab...");
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "TOGGLE_INDEED_MODE"
+      });
+
+      if (!response.ok) {
+        setStatus(response.error);
+        return;
+      }
+
+      if (response.state) {
+        setState(response.state);
+      }
+
+      setStatus(
+        response.indeedMode
+          ? response.indeedMode.message
+          : "Indeed mode toggled."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function switchActiveProfile(profileId: string) {
     if (!state || profileId === state.activeProfileId) {
       return;
@@ -489,6 +517,13 @@ function PopupApp() {
             {busy ? "Working..." : "Toggle Handshake mode"}
           </button>
           <button
+            className="button button-secondary"
+            disabled={busy}
+            onClick={() => void toggleIndeedMode()}
+          >
+            {busy ? "Working..." : "Toggle Indeed mode"}
+          </button>
+          <button
             className="button button-ghost"
             disabled={busy}
             onClick={() => chrome.runtime.openOptionsPage()}
@@ -504,6 +539,11 @@ function PopupApp() {
         <p className="helper-line">
           Handshake mode: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>{" "}
           on a Handshake job search page to submit in-Handshake resume-only
+          applications, then press it again to stop.
+        </p>
+        <p className="helper-line">
+          Indeed mode: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>{" "}
+          on an Indeed search page to submit Indeed Easy Apply resume-only
           applications, then press it again to stop.
         </p>
       </section>

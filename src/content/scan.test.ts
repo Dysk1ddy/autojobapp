@@ -108,6 +108,34 @@ describe("scanPage", () => {
     expect(scan.jobSignals).toContain("submit application");
   });
 
+  it("uses the Indeed adapter on Indeed job search pages", () => {
+    document.body.innerHTML = `
+      <main>
+        <h1>Software Intern</h1>
+        <button>Apply now</button>
+        <button>Apply on company site</button>
+        <div role="dialog">
+          <label>
+            Resume
+            <input type="file" name="resume" />
+          </label>
+          <button>Submit your application</button>
+        </div>
+      </main>
+    `;
+    const profile = createDefaultApplicantProfile();
+
+    const scan = scanPage(profile, {
+      href: "https://www.indeed.com/jobs?q=software&l=remote",
+      title: "Indeed Job Search"
+    });
+
+    expect(scan.platform).toBe("indeed");
+    expect(scan.adapterLabel).toBe("Indeed adapter");
+    expect(scan.jobSignals).toContain("apply now");
+    expect(scan.jobSignals).toContain("submit your application");
+  });
+
   it("uses the Workday adapter and detects workflow progress", () => {
     renderFixture(loadFixture("workday-application.html"));
     const profile = createDefaultApplicantProfile();
