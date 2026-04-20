@@ -68,8 +68,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
       "signed name",
       "typed name",
       "type your name",
-      "electronic signature",
-      "name"
+      "electronic signature"
     ],
     autocomplete: ["name"],
     preferredInputTypes: ["text"],
@@ -200,12 +199,12 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     key: "links.github",
     label: "GitHub",
     synonyms: [
-      "github",
       "github url",
-      "github profile",
       "github profile url",
+      "github profile",
       "github link",
-      "github account"
+      "github account",
+      "github"
     ],
     preferredInputTypes: ["url", "text"],
     getValue: (profile) => textValue(profile.links.github)
@@ -308,7 +307,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     key: "skills.list",
     label: "Skills",
-    synonyms: ["skills", "technical skills", "technologies", "tools"],
+    synonyms: ["skills", "technical skills", "technologies"],
     preferredTags: ["input", "textarea"],
     getValue: (profile) => listValue(profile.skills)
   },
@@ -805,6 +804,7 @@ function evaluateDefinition(
     signals,
     true
   );
+  score += scoreExactFullNameLabel(candidate, definition, signals);
 
   if (definition.preferredTags?.includes(candidate.elementTag)) {
     score += 4;
@@ -842,6 +842,35 @@ function evaluateDefinition(
     valuePreview: value.preview,
     hasValue: value.hasValue
   };
+}
+
+function scoreExactFullNameLabel(
+  candidate: FieldScanCandidate,
+  definition: FieldDefinition,
+  signals: string[]
+): number {
+  if (definition.key !== "personal.fullName") {
+    return 0;
+  }
+
+  const normalizedLabel = normalizeText(candidate.label);
+
+  if (normalizedLabel !== "name") {
+    return 0;
+  }
+
+  const context = normalizeText(`${candidate.sectionHeading} ${candidate.nearbyText}`);
+
+  if (
+    /\b(project|school|education|company|employer|experience|reference|emergency contact)\b/.test(
+      context
+    )
+  ) {
+    return 0;
+  }
+
+  pushUnique(signals, "label:name");
+  return 24;
 }
 
 function determineConfidence(

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_AI_ASSIST_MODEL,
   createDefaultApplicantProfile,
   createDefaultSettings,
   createDefaultState,
+  detectPlatformFromHostname,
+  normalizeStoredState,
   parseApplicantProfileJson,
   shouldFillConfidence
 } from "./core";
@@ -32,6 +35,22 @@ describe("shouldFillConfidence", () => {
     expect(createDefaultSettings().fullyAutoEnabled).toBe(false);
     expect(createDefaultSettings().aiAssistScope).toBe("focused");
     expect(createDefaultSettings().aiPreferGeneratedValues).toBe(false);
+    expect(createDefaultSettings().aiAssistModel).toBe("gpt-5.4-nano");
+    expect(createDefaultSettings().aiAssistModel).toBe(DEFAULT_AI_ASSIST_MODEL);
+  });
+
+  it("migrates the legacy AI model default to GPT-5.4 nano", () => {
+    const state = createDefaultState();
+
+    state.settings.aiAssistModel = "gpt-4.1-mini";
+
+    expect(normalizeStoredState(state).settings.aiAssistModel).toBe(
+      DEFAULT_AI_ASSIST_MODEL
+    );
+  });
+
+  it("detects Handshake job pages as a first-class platform", () => {
+    expect(detectPlatformFromHostname("app.joinhandshake.com")).toBe("handshake");
   });
 
   it("imports a raw applicant profile JSON backup", () => {

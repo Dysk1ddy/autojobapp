@@ -1,6 +1,7 @@
 export type SupportedPlatform =
   | "generic"
   | "greenhouse"
+  | "handshake"
   | "lever"
   | "workday"
   | "dover"
@@ -151,6 +152,16 @@ export interface FillSummary {
   autoSubmitMessage: string;
   results: FilledFieldResult[];
   filledAt: string;
+}
+
+export interface HandshakeModeStatus {
+  active: boolean;
+  applied: number;
+  skipped: number;
+  failed: number;
+  visited: number;
+  message: string;
+  lastJobTitle: string;
 }
 
 export interface AiFieldSuggestion {
@@ -425,6 +436,7 @@ export type RuntimeRequest =
   | { type: "GET_STATE" }
   | { type: "SCAN_ACTIVE_TAB" }
   | { type: "FILL_ACTIVE_TAB" }
+  | { type: "TOGGLE_HANDSHAKE_MODE" }
   | { type: "UPDATE_SETTINGS"; settings: Partial<ExtensionSettings> }
   | {
       type: "VERIFY_OPENAI_KEY";
@@ -443,6 +455,7 @@ export type RuntimeResponse =
       state?: StoredState;
       scan?: ScanSummary;
       fill?: FillSummary;
+      handshakeMode?: HandshakeModeStatus;
       resumeImport?: RuntimeResumeImportPayload;
       aiVerification?: AiVerificationSummary;
     }
@@ -457,16 +470,26 @@ export type ContentRequest = {
   profile: ApplicantProfile;
   settings: ExtensionSettings;
   aiSuggestions?: AiFieldSuggestion[];
+} | {
+  type: "JOB_APP_TOGGLE_HANDSHAKE_MODE";
+  profile: ApplicantProfile;
+  settings: ExtensionSettings;
 };
 
 export type ContentResponse =
-  | { ok: true; scan?: ScanSummary; fill?: FillSummary }
+  | {
+      ok: true;
+      scan?: ScanSummary;
+      fill?: FillSummary;
+      handshakeMode?: HandshakeModeStatus;
+    }
   | { ok: false; error: string };
 
 export const STORAGE_KEY = "autojobapp.state.v1";
 export const CURRENT_SCHEMA_VERSION = 17;
 export const DEFAULT_PROFILE_ID = "primary-profile";
-export const DEFAULT_AI_ASSIST_MODEL = "gpt-4.1-mini";
+export const DEFAULT_AI_ASSIST_MODEL = "gpt-5.4-nano";
+const LEGACY_DEFAULT_AI_ASSIST_MODELS = ["gpt-4.1-mini"];
 
 export const defaultState: StoredState = createDefaultState();
 
@@ -1003,6 +1026,10 @@ export function summarizeApplicantProfile(
 
 export function detectPlatformFromHostname(hostname: string): SupportedPlatform {
   const host = hostname.toLowerCase();
+
+  if (host.includes("joinhandshake.com")) {
+    return "handshake";
+  }
 
   if (host.includes("greenhouse")) {
     return "greenhouse";
@@ -1613,12 +1640,23 @@ function normalizeExtensionSettings(
       fallback.aiPreferGeneratedValues
     ),
     openAiApiKey: readString(record?.openAiApiKey, fallback.openAiApiKey),
-    aiAssistModel: readString(record?.aiAssistModel, fallback.aiAssistModel),
+    aiAssistModel: normalizeAiAssistModel(
+      record?.aiAssistModel,
+      fallback.aiAssistModel
+    ),
     aiCustomInstructions: readString(
       record?.aiCustomInstructions,
       fallback.aiCustomInstructions
     )
   };
+}
+
+function normalizeAiAssistModel(value: unknown, fallback: string): string {
+  const model = readString(value, fallback);
+
+  return LEGACY_DEFAULT_AI_ASSIST_MODELS.includes(model)
+    ? DEFAULT_AI_ASSIST_MODEL
+    : model;
 }
 
 function normalizeResumeImportSummary(raw: unknown): ResumeImportSummary | null {
@@ -1881,6 +1919,7 @@ function normalizeSupportedPlatform(value: unknown): SupportedPlatform {
   switch (value) {
     case "generic":
     case "greenhouse":
+    case "handshake":
     case "lever":
     case "workday":
     case "taleo":

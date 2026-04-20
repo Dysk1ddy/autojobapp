@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "A privacy-first scaffold for job application form scanning and future autofill workflows.",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
-  "host_permissions": ["https://api.openai.com/*"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://app.joinhandshake.com/*"
+  ],
   "action": {
     "default_title": "AutoJobApp",
     "default_popup": "popup.html"
@@ -20,6 +23,13 @@
         "mac": "Command+Shift+Y"
       },
       "description": "Autofill the active job application page"
+    },
+    "toggle-handshake-mode": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+H",
+        "mac": "Command+Shift+H"
+      },
+      "description": "Toggle Handshake mode on the active job search page"
     }
   },
   "options_page": "options.html"

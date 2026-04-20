@@ -22,6 +22,8 @@ export function resolvePlatformAdapter(hostname: string): PlatformAdapter {
   const platform = detectPlatformFromHostname(hostname);
 
   switch (platform) {
+    case "handshake":
+      return handshakeAdapter;
     case "greenhouse":
       return greenhouseAdapter;
     case "lever":
@@ -38,6 +40,62 @@ export function resolvePlatformAdapter(hostname: string): PlatformAdapter {
 const genericAdapter = createAdapter("generic", "Generic adapter", [
   "Using shared label, section, and nearby-text heuristics."
 ]);
+
+const handshakeAdapter = createAdapter("handshake", "Handshake adapter", [
+  "Recognizes Handshake in-site application surfaces and resume document prompts.",
+  "Keeps Apply Externally links out of Handshake mode automation."
+], {
+  getLabel: (field) =>
+    firstText(
+      textFromClosest(
+        field,
+        "[role='dialog'], [aria-modal='true'], form, section, article, [data-testid*='document'], [data-testid*='resume']",
+        "label, legend, [role='heading'], h1, h2, h3, h4, p"
+      ),
+      referencedText(field, "aria-labelledby")
+    ),
+  getSectionHeading: (field) =>
+    firstText(
+      textFromClosest(
+        field,
+        "[role='dialog'], [aria-modal='true'], form, section, article",
+        "h1, h2, h3, h4, [role='heading'], legend"
+      ),
+      nearestHeadingText(field)
+    ),
+  getNearbyText: (field) =>
+    clippedText(
+      field.closest(
+        "[role='dialog'], [aria-modal='true'], [data-testid*='document'], [data-testid*='resume'], form, section, article, fieldset, div"
+      )?.textContent
+    ),
+  getOptionLabels: (field) =>
+    extractChoiceLabels(
+      field,
+      "[role='dialog'], [aria-modal='true'], form, section, article, fieldset"
+    ),
+  getSignals: (field) =>
+    dedupeStrings([
+      ...attributeTokens(field, ["data-testid", "data-test-id", "aria-label", "name"]),
+      ...ancestorAttributeTokens(field, ["data-testid", "data-test-id"], 5),
+      ...referencedTextTokens(field, "aria-describedby"),
+      ...referencedTextTokens(field, "aria-labelledby")
+    ]),
+  getGroupingKey: (field) =>
+    choiceGroupingKey(
+      field,
+      "[role='dialog'], [aria-modal='true'], form, fieldset, [role='group']",
+      ["data-testid", "data-test-id"]
+    ),
+  getJobSignals: (pageText) =>
+    filterSignals(pageText, [
+      "apply externally",
+      "submit application",
+      "resume",
+      "quick apply",
+      "you applied"
+    ])
+});
 
 const greenhouseAdapter = createAdapter("greenhouse", "Greenhouse adapter", [
   "Reads application-question and field wrappers for stronger labels.",
@@ -215,7 +273,7 @@ const doverAdapter = createAdapter("dover", "Dover adapter", [
       referencedText(field, "aria-labelledby"),
       textFromClosest(
         field,
-        "[data-testid*='question'], [data-testid*='field'], [data-testid*='input'], .application-question, .question, .field, fieldset, form",
+        "[data-testid*='question'], [data-testid*='field'], [data-testid*='input'], .application-question, .question, .field, fieldset",
         "label, legend, [role='heading'], h2, h3, h4, p, span, div"
       )
     ),

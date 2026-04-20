@@ -52,6 +52,11 @@ You can also trigger autofill with:
 - `Ctrl` + `Shift` + `Y` on Windows/Linux
 - `Command` + `Shift` + `Y` on macOS
 
+Handshake mode has its own toggle shortcut:
+
+- `Ctrl` + `Shift` + `H` on Windows/Linux
+- `Command` + `Shift` + `H` on macOS
+
 The shortcut can be changed in `chrome://extensions/shortcuts`.
 
 ## What the extension does
@@ -97,17 +102,19 @@ This policy is applied as a deterministic fallback for supported binary choice c
 
 - optional AI-assisted autofill using the OpenAI Responses API
 - saved OpenAI API key and model configuration in Options
+- default AI model: `gpt-5.4-nano` / GPT-5.4 nano
 - API key verification inside Options before relying on AI features
 - AI scope controls: Focused, Expanded, Aggressive
 - AI priority control: saved profile first or AI first
 - custom AI instructions
 - review-first behavior by default
 - fully auto override if you explicitly want AI-assisted fills to continue to final submit
+- Handshake mode for `app.joinhandshake.com` job search pages: it only clicks in-Handshake `Apply` or `Quick Apply` controls, skips `Apply Externally`, rejects applications that ask for cover letters/transcripts/extra questions, submits resume-only applications, then scrolls or advances through more listings until toggled off
 
 ### ATS and workflow support
 
 - generic fallback field detection
-- adapter-aware handling for Greenhouse, Lever, Workday, and Dover flows
+- adapter-aware handling for Handshake, Greenhouse, Lever, Workday, and Dover flows
 - adapter notes surfaced in scan summaries for debugging
 - workflow detection for likely current step, detected steps, and next actions
 

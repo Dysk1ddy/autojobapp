@@ -134,6 +134,34 @@ function PopupApp() {
     }
   }
 
+  async function toggleHandshakeMode() {
+    setBusy(true);
+    setStatus("Toggling Handshake mode on the active tab...");
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: "TOGGLE_HANDSHAKE_MODE"
+      });
+
+      if (!response.ok) {
+        setStatus(response.error);
+        return;
+      }
+
+      if (response.state) {
+        setState(response.state);
+      }
+
+      setStatus(
+        response.handshakeMode
+          ? response.handshakeMode.message
+          : "Handshake mode toggled."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function switchActiveProfile(profileId: string) {
     if (!state || profileId === state.activeProfileId) {
       return;
@@ -454,6 +482,13 @@ function PopupApp() {
             {busy ? "Working..." : "Autofill ready fields"}
           </button>
           <button
+            className="button button-secondary"
+            disabled={busy}
+            onClick={() => void toggleHandshakeMode()}
+          >
+            {busy ? "Working..." : "Toggle Handshake mode"}
+          </button>
+          <button
             className="button button-ghost"
             disabled={busy}
             onClick={() => chrome.runtime.openOptionsPage()}
@@ -465,6 +500,11 @@ function PopupApp() {
           Shortcut: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> to run
           autofill on the active tab. You can customize it in
           <code>chrome://extensions/shortcuts</code>.
+        </p>
+        <p className="helper-line">
+          Handshake mode: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>{" "}
+          on a Handshake job search page to submit in-Handshake resume-only
+          applications, then press it again to stop.
         </p>
       </section>
 

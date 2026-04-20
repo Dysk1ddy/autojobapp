@@ -1288,6 +1288,44 @@ describe("fillPage", () => {
     expect(result.fill.filled).toBeGreaterThanOrEqual(2);
   });
 
+  it("does not fill generic Dover text questions when internal names are reused", async () => {
+    document.body.innerHTML = `
+      <form data-testid="dover-application-form">
+        <label>
+          Github URL *
+          <input id="dover-github-url" type="text" name="name" />
+        </label>
+        <label>
+          AI Tools you use everyday *
+          <input id="dover-ai-tools" type="text" name="name" />
+        </label>
+        <label>
+          Why Machine &amp; Minds *
+          <input id="dover-why-company" type="text" name="name" />
+        </label>
+      </form>
+    `;
+
+    const profile = createDefaultApplicantProfile();
+    profile.links.github = "https://github.com/taylor-applicant";
+
+    const result = await fillPage(profile, {
+      href: "https://app.dover.com/apply/Machine%20&%20Minds/123",
+      title: "Dover Machine & Minds"
+    });
+
+    expect(
+      (document.getElementById("dover-github-url") as HTMLInputElement).value
+    ).toBe("https://github.com/taylor-applicant");
+    expect((document.getElementById("dover-ai-tools") as HTMLInputElement).value).toBe(
+      ""
+    );
+    expect(
+      (document.getElementById("dover-why-company") as HTMLInputElement).value
+    ).toBe("");
+    expect(result.fill.filled).toBe(1);
+  });
+
   it("auto-selects ethnicity dropdown fields", async () => {
     document.body.innerHTML = `
       <form>

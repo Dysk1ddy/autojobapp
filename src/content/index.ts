@@ -23,6 +23,7 @@ import {
   PlatformAdapter,
   resolvePlatformAdapter
 } from "./adapters";
+import { toggleHandshakeMode } from "./handshake-mode";
 import { detectApplicationWorkflow } from "./workflow";
 import {
   FieldScanCandidate,
@@ -179,6 +180,24 @@ if (
             sendResponse({
               ok: true,
               ...result
+            } satisfies ContentResponse);
+          })
+          .catch((error) => {
+            sendResponse({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error)
+            } satisfies ContentResponse);
+          });
+
+        return true;
+      }
+
+      if (request.type === "JOB_APP_TOGGLE_HANDSHAKE_MODE") {
+        void toggleHandshakeMode(request.profile, request.settings)
+          .then((handshakeMode) => {
+            sendResponse({
+              ok: true,
+              handshakeMode
             } satisfies ContentResponse);
           })
           .catch((error) => {
@@ -4543,11 +4562,12 @@ function getGroupingKey(
 }
 
 function buildFieldId(field: FormControl, index: number): string {
+  const name = field.getAttribute("name");
   const stableId =
     field.id ||
-    field.getAttribute("name") ||
     field.getAttribute("data-qa") ||
-    field.getAttribute("data-testid");
+    field.getAttribute("data-testid") ||
+    (isGenericFieldName(name) ? "" : name);
 
   return stableId?.trim()
     ? `${field.tagName.toLowerCase()}:${stableId.trim()}`
@@ -4561,7 +4581,7 @@ function buildSelectorHint(field: FormControl, index: number): string {
 
   const name = field.getAttribute("name");
 
-  if (name) {
+  if (name && !isGenericFieldName(name)) {
     return `${field.tagName.toLowerCase()}[name="${name}"]`;
   }
 
@@ -4996,7 +5016,9 @@ function resolveCurrentGroupElements(group: CandidateGroup): FormControl[] {
   const resolved = [
     ...queryElementsFromSelectorHint(group.candidate.selectorHint),
     ...queryElementsById(group.candidate.elementId),
-    ...queryElementsByName(group.candidate.name),
+    ...(isGenericFieldName(group.candidate.name)
+      ? []
+      : queryElementsByName(group.candidate.name)),
     ...group.elements.filter((element) => element.isConnected)
   ];
 
@@ -5088,6 +5110,30 @@ function queryElementsByName(name: string): HTMLElement[] {
   }
 
   return queryAllDocuments<HTMLElement>(`[name="${escapeAttributeValue(name)}"]`);
+}
+
+function isGenericFieldName(value: string | null | undefined): boolean {
+  const normalized = normalizeText(cleanText(value));
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    [
+      "name",
+      "value",
+      "answer",
+      "answers",
+      "response",
+      "responses",
+      "field",
+      "fields",
+      "input",
+      "text",
+      "question"
+    ].includes(normalized) || /^answers? \d+$/.test(normalized)
+  );
 }
 
 function escapeAttributeValue(value: string): string {

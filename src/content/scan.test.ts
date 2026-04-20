@@ -80,6 +80,34 @@ describe("scanPage", () => {
     ).toBe(true);
   });
 
+  it("uses the Handshake adapter on Handshake job search pages", () => {
+    document.body.innerHTML = `
+      <main>
+        <h1>Software Intern</h1>
+        <button>Apply</button>
+        <button>Apply Externally</button>
+        <div role="dialog">
+          <label>
+            Resume
+            <input type="file" name="resume" />
+          </label>
+          <button>Submit Application</button>
+        </div>
+      </main>
+    `;
+    const profile = createDefaultApplicantProfile();
+
+    const scan = scanPage(profile, {
+      href: "https://app.joinhandshake.com/job-search/10966600?page=1&per_page=25",
+      title: "Handshake Job Search"
+    });
+
+    expect(scan.platform).toBe("handshake");
+    expect(scan.adapterLabel).toBe("Handshake adapter");
+    expect(scan.jobSignals).toContain("apply externally");
+    expect(scan.jobSignals).toContain("submit application");
+  });
+
   it("uses the Workday adapter and detects workflow progress", () => {
     renderFixture(loadFixture("workday-application.html"));
     const profile = createDefaultApplicantProfile();

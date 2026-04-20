@@ -31,13 +31,17 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.commands.onCommand.addListener((command) => {
-  if (command !== "autofill-active-tab") {
-    return;
+  if (command === "autofill-active-tab") {
+    void fillActiveTab().catch((error) => {
+      console.error("AutoJobApp shortcut autofill failed:", error);
+    });
   }
 
-  void fillActiveTab().catch((error) => {
-    console.error("AutoJobApp shortcut autofill failed:", error);
-  });
+  if (command === "toggle-handshake-mode") {
+    void toggleHandshakeMode().catch((error) => {
+      console.error("AutoJobApp Handshake mode shortcut failed:", error);
+    });
+  }
 });
 
 chrome.runtime.onMessage.addListener(
@@ -88,6 +92,9 @@ async function handleRuntimeMessage(
 
     case "FILL_ACTIVE_TAB":
       return fillActiveTab();
+
+    case "TOGGLE_HANDSHAKE_MODE":
+      return toggleHandshakeMode();
 
     case "UPDATE_SETTINGS":
       return {
@@ -260,6 +267,56 @@ async function fillActiveTab(): Promise<RuntimeResponse> {
     state: nextState,
     scan,
     fill: response.fill
+  };
+}
+
+async function toggleHandshakeMode(): Promise<RuntimeResponse> {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+
+  if (!tab?.id) {
+    return {
+      ok: false,
+      error: "No active tab was available for Handshake mode."
+    };
+  }
+
+  if (!isScannableUrl(tab.url)) {
+    return {
+      ok: false,
+      error: "Open a Handshake job search page before toggling Handshake mode."
+    };
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["content.js"]
+  });
+
+  const state = await readState();
+  const profile = getActiveProfile(state);
+  const contentRequest: ContentRequest = {
+    type: "JOB_APP_TOGGLE_HANDSHAKE_MODE",
+    profile,
+    settings: state.settings
+  };
+  const response = await sendContentMessage(tab.id, contentRequest);
+
+  if (!response.ok || !response.handshakeMode) {
+    return {
+      ok: false,
+      error: response.ok
+        ? "The page did not return a Handshake mode status."
+        : response.error
+    };
+  }
+
+  return {
+    ok: true,
+    state,
+    handshakeMode: response.handshakeMode
   };
 }
 
