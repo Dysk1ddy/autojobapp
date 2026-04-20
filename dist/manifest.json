@@ -35,8 +35,8 @@
     },
     "toggle-indeed-mode": {
       "suggested_key": {
-        "default": "Ctrl+Shift+I",
-        "mac": "Command+Shift+I"
+        "default": "Ctrl+Shift+K",
+        "mac": "Command+Shift+K"
       },
       "description": "Toggle Indeed mode on the active job search page"
     }

@@ -66,6 +66,23 @@ const APPLICATION_SURFACE_SELECTOR = [
   "[class*='Modal']",
   ".modal"
 ].join(", ");
+const INDEED_JOB_LINK_SELECTOR = [
+  "a[href*='viewjob']",
+  "a[href*='jk=']",
+  "a[href*='vjk=']",
+  "a[data-jk]",
+  "[data-jk] a[href]"
+].join(", ");
+const INDEED_JOB_CONTAINER_SELECTOR = [
+  "[data-jk]",
+  ".job_seen_beacon",
+  "li",
+  "article",
+  "[role='listitem']",
+  "[data-testid*='job']",
+  "[class*='job']",
+  "[class*='Job']"
+].join(", ");
 const DOCUMENT_OPTION_SELECTOR = [
   "[role='option']",
   "[role='menuitem']",
@@ -362,21 +379,18 @@ function reduceIndeedStatus(
 }
 
 function collectIndeedJobCards(): IndeedJobCard[] {
-  const links = queryAll<HTMLAnchorElement>(
-    "a[href*='viewjob'], a[href*='jk='], a[data-jk]"
-  );
+  const currentJobCard = findCurrentIndeedJobCard();
+  const links = queryAll<HTMLAnchorElement>(INDEED_JOB_LINK_SELECTOR);
   const cards = links
     .map((link) => {
-      const id = extractIndeedJobId(link.href || link.getAttribute("data-jk") || "");
+      const id = getIndeedJobIdFromLink(link);
 
       if (!id || !isIndeedJobNavigationLink(link)) {
         return null;
       }
 
       const element =
-        link.closest<HTMLElement>(
-          "[data-jk], .job_seen_beacon, li, article, [role='listitem'], [data-testid*='job'], [class*='job'], [class*='Job']"
-        ) ?? link;
+        link.closest<HTMLElement>(INDEED_JOB_CONTAINER_SELECTOR) ?? link;
       const title =
         clipText(cleanText(link.textContent), 96) ||
         clipText(cleanText(element.querySelector("h2, [role='heading']")?.textContent), 96);
@@ -392,31 +406,161 @@ function collectIndeedJobCards(): IndeedJobCard[] {
     .filter((card): card is IndeedJobCard => Boolean(card))
     .filter((card) => isVisibleElement(card.element));
 
-  const uniqueCards = dedupeBy(cards, (card) => card.id);
+  return dedupeBy(
+    [currentJobCard, ...cards].filter((card): card is IndeedJobCard =>
+      Boolean(card)
+    ),
+    (card) => card.id
+  );
+}
 
-  if (uniqueCards.length > 0) {
-    return uniqueCards;
+function findCurrentIndeedJobCard(): IndeedJobCard | null {
+  const detailRoot = findIndeedJobDetailRoot();
+  const currentJobId =
+    findCurrentIndeedJobId(detailRoot) ||
+    (detailRoot ? createFallbackCurrentIndeedJobId(detailRoot) : "");
+
+  if (!currentJobId || (!detailRoot && !isLikelyIndeedJobUrl(window.location.href))) {
+    return null;
   }
 
-  const currentJobId = extractIndeedJobId(window.location.href);
+  const title = getCurrentIndeedJobTitle();
+  const href = findCurrentIndeedJobHref(detailRoot) || window.location.href;
 
-  if (!currentJobId) {
-    return [];
-  }
+  return {
+    id: currentJobId,
+    element: detailRoot ?? document.body,
+    link: createSyntheticCurrentJobLink(currentJobId, href),
+    title: title || `Indeed job ${currentJobId}`,
+    href
+  };
+}
 
-  return [
-    {
-      id: currentJobId,
-      element: document.body,
-      link: createSyntheticCurrentJobLink(currentJobId),
-      title: clipText(cleanText(document.title), 96) || `Indeed job ${currentJobId}`,
-      href: window.location.href
-    }
+function findCurrentIndeedJobId(detailRoot: HTMLElement | null): string {
+  const candidates = [
+    window.location.href,
+    findCurrentIndeedJobHref(detailRoot),
+    document.querySelector<HTMLLinkElement>("link[rel='canonical']")?.href,
+    document
+      .querySelector<HTMLMetaElement>("meta[property='og:url'], meta[name='twitter:url']")
+      ?.content,
+    ...queryAll<HTMLAnchorElement>(INDEED_JOB_LINK_SELECTOR, detailRoot ?? document)
+      .slice(0, 10)
+      .map((link) => link.href || link.getAttribute("data-jk") || "")
   ];
+
+  for (const candidate of candidates) {
+    const id = extractIndeedJobId(candidate ?? "");
+
+    if (id) {
+      return id;
+    }
+  }
+
+  const attrSource =
+    findElementWithIndeedJobId(detailRoot ?? document.body) ??
+    findElementWithIndeedJobId(document.body);
+  return attrSource ? readIndeedJobIdFromElement(attrSource) : "";
+}
+
+function findCurrentIndeedJobHref(detailRoot: HTMLElement | null): string {
+  const candidates = [
+    window.location.href,
+    document.querySelector<HTMLLinkElement>("link[rel='canonical']")?.href,
+    document
+      .querySelector<HTMLMetaElement>("meta[property='og:url'], meta[name='twitter:url']")
+      ?.content,
+    queryAll<HTMLAnchorElement>(INDEED_JOB_LINK_SELECTOR, detailRoot ?? document)
+      .find((link) => getIndeedJobIdFromLink(link))
+      ?.href
+  ];
+
+  return (
+    candidates.find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" &&
+        candidate.length > 0 &&
+        candidate !== "about:blank" &&
+        isLikelyIndeedJobUrl(candidate)
+    ) ?? ""
+  );
+}
+
+function createFallbackCurrentIndeedJobId(detailRoot: HTMLElement): string {
+  const source = [
+    findCurrentIndeedJobHref(detailRoot),
+    getCurrentIndeedJobTitle(),
+    cleanText(detailRoot.getAttribute("aria-label") ?? "")
+  ]
+    .filter(Boolean)
+    .join("|");
+
+  return source ? `current-${hashString(source)}` : "";
+}
+
+function findElementWithIndeedJobId(root: ParentNode): HTMLElement | null {
+  return (
+    queryAll<HTMLElement>(
+      [
+        "[data-jk]",
+        "[data-jobkey]",
+        "[data-job-key]",
+        "[data-indeed-apply-jobkey]",
+        "[data-indeed-apply-job-key]",
+        "[data-indeed-apply-jobid]",
+        "[data-indeed-apply-job-id]"
+      ].join(", "),
+      root
+    ).find((element) => Boolean(readIndeedJobIdFromElement(element))) ?? null
+  );
+}
+
+function readIndeedJobIdFromElement(element: HTMLElement): string {
+  const attrNames = [
+    "data-jk",
+    "data-jobkey",
+    "data-job-key",
+    "data-indeed-apply-jobkey",
+    "data-indeed-apply-job-key",
+    "data-indeed-apply-jobid",
+    "data-indeed-apply-job-id"
+  ];
+
+  for (const attrName of attrNames) {
+    const value = cleanText(element.getAttribute(attrName) ?? "");
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function isLikelyIndeedJobUrl(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value, window.location.href);
+    const path = url.pathname.toLowerCase();
+
+    return (
+      isIndeedHostname(url.hostname) &&
+      (extractIndeedJobId(url.href) !== "" ||
+        path.includes("viewjob") ||
+        path.includes("/rc/clk") ||
+        path.includes("/pagead/clk") ||
+        path.includes("/cmp/"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isIndeedJobNavigationLink(link: HTMLAnchorElement): boolean {
-  const id = extractIndeedJobId(link.href || link.getAttribute("data-jk") || "");
+  const id = getIndeedJobIdFromLink(link);
 
   if (!id || isExternalIndeedHref(link.href)) {
     return false;
@@ -444,9 +588,24 @@ function isIndeedJobNavigationLink(link: HTMLAnchorElement): boolean {
   }
 }
 
-function createSyntheticCurrentJobLink(currentJobId: string): HTMLAnchorElement {
+function getIndeedJobIdFromLink(link: HTMLAnchorElement): string {
+  return (
+    extractIndeedJobId(link.href || link.getAttribute("data-jk") || "") ||
+    readIndeedJobIdFromElement(link) ||
+    readIndeedJobIdFromElement(
+      link.closest<HTMLElement>("[data-jk], [data-jobkey], [data-job-key]") ??
+        link
+    )
+  );
+}
+
+function createSyntheticCurrentJobLink(
+  currentJobId: string,
+  href: string
+): HTMLAnchorElement {
   const link = document.createElement("a");
-  link.href = window.location.href;
+  link.href = href || window.location.href;
+  link.dataset.autojobappCurrentJob = "true";
   link.textContent = `Indeed job ${currentJobId}`;
   return link;
 }
@@ -458,7 +617,11 @@ function extractIndeedJobId(value: string): string {
 
   try {
     const url = new URL(value, window.location.href);
-    const jk = url.searchParams.get("jk");
+    const jk =
+      url.searchParams.get("jk") ??
+      url.searchParams.get("vjk") ??
+      url.searchParams.get("jobkey") ??
+      url.searchParams.get("jobKey");
 
     if (jk) {
       return jk;
@@ -467,7 +630,9 @@ function extractIndeedJobId(value: string): string {
     // Continue with the regex fallback.
   }
 
-  const match = value.match(/[?&]jk=([^&#]+)|data-jk=["']?([^"'\s&]+)/i);
+  const match = value.match(
+    /(?:^|[?&#])(?:jk|vjk|jobkey)=([^&#\s"']+)|data-(?:jk|jobkey|job-key)=["']?([^"'\s&>]+)/i
+  );
   return decodeURIComponent(match?.[1] ?? match?.[2] ?? "");
 }
 
@@ -477,7 +642,10 @@ async function activateIndeedJobCard(
 ): Promise<void> {
   const currentJobId = extractIndeedJobId(window.location.href);
 
-  if (currentJobId && currentJobId === card.id) {
+  if (
+    card.link.dataset.autojobappCurrentJob === "true" ||
+    (currentJobId && currentJobId === card.id)
+  ) {
     return;
   }
 
@@ -1205,16 +1373,29 @@ function findNextPageControl(): HTMLElement | null {
 }
 
 function findIndeedJobDetailRoot(): HTMLElement | null {
+  const roots = queryAll<HTMLElement>(
+    [
+      "#jobsearch-ViewJobPaneWrapper",
+      "#jobsearch-ViewjobPaneWrapper",
+      "#viewJobSSRRoot",
+      "[data-testid='jobsearch-JobComponent']",
+      ".jobsearch-JobComponent",
+      "[data-testid*='jobsearch-Job']",
+      "[aria-label*='Job details']",
+      "[aria-label*='job details']",
+      "[class*='jobsearch-ViewJobLayout']",
+      "[class*='ViewJobLayout']"
+    ].join(", ")
+  ).filter(isVisibleElement);
+
   return (
-    queryAll<HTMLElement>(
-      [
-        "#jobsearch-ViewjobPaneWrapper",
-        "[data-testid='jobsearch-JobComponent']",
-        "[data-testid*='jobsearch-Job']",
-        "[aria-label*='Job details']",
-        "[class*='jobsearch-ViewJobLayout']"
-      ].join(", ")
-    ).find(isVisibleElement) ?? null
+    roots.find((root) =>
+      queryAll<HTMLElement>(ACTION_CONTROL_SELECTOR, root).some((control) =>
+        normalizeText(getActionControlText(control)).includes("apply")
+      )
+    ) ??
+    roots[0] ??
+    null
   );
 }
 
@@ -1405,18 +1586,21 @@ function getActionControlText(control: HTMLElement): string {
 }
 
 function isInsideIndeedJobResult(element: HTMLElement): boolean {
-  const container = element.closest<HTMLElement>(
-    "[data-jk], .job_seen_beacon, li, article, [role='listitem'], [data-testid*='job'], [class*='job'], [class*='Job']"
-  );
+  const detailRoot = findIndeedJobDetailRoot();
+
+  if (detailRoot?.contains(element)) {
+    return false;
+  }
+
+  const container = element.closest<HTMLElement>(INDEED_JOB_CONTAINER_SELECTOR);
 
   if (!container || container.closest(APPLICATION_SURFACE_SELECTOR)) {
     return false;
   }
 
-  return queryAll<HTMLAnchorElement>(
-    "a[href*='viewjob'], a[href*='jk='], a[data-jk]",
-    container
-  ).some(isIndeedJobNavigationLink);
+  return queryAll<HTMLAnchorElement>(INDEED_JOB_LINK_SELECTOR, container).some(
+    isIndeedJobNavigationLink
+  );
 }
 
 function isExternalIndeedHref(href: string): boolean {
@@ -1480,6 +1664,16 @@ function normalizeText(value: string): string {
 function clipText(value: string, maxLength: number): string {
   const text = cleanText(value);
   return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash).toString(36);
 }
 
 function isPlaceholderText(value: string): boolean {

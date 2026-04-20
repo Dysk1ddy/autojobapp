@@ -542,7 +542,7 @@ function PopupApp() {
           applications, then press it again to stop.
         </p>
         <p className="helper-line">
-          Indeed mode: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>{" "}
+          Indeed mode: press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>{" "}
           on an Indeed search page to submit Indeed Easy Apply resume-only
           applications, then press it again to stop.
         </p>

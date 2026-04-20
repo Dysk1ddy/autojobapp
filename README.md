@@ -59,8 +59,8 @@ Handshake mode has its own toggle shortcut:
 
 Indeed mode has its own toggle shortcut:
 
-- `Ctrl` + `Shift` + `I` on Windows/Linux
-- `Command` + `Shift` + `I` on macOS
+- `Ctrl` + `Shift` + `K` on Windows/Linux
+- `Command` + `Shift` + `K` on macOS
 
 The shortcut can be changed in `chrome://extensions/shortcuts`.
 

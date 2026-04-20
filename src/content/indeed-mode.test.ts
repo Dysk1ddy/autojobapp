@@ -90,6 +90,85 @@ describe("Indeed mode", () => {
     ).toBe(false);
   });
 
+  it("submits a direct Indeed job page without search-result cards", async () => {
+    const profile = createDefaultApplicantProfile();
+    profile.documents.resume = {
+      id: "resume-1",
+      name: "Resume PDF",
+      fileName: "Resume.pdf",
+      mimeType: "application/pdf",
+      source: "local",
+      sizeBytes: 12,
+      dataBase64: "cmVzdW1lIGRhdGE=",
+      lastUpdatedAt: new Date().toISOString()
+    };
+    let submitted = false;
+
+    document.head.innerHTML = `
+      <title>Frontend Engineer - Indeed</title>
+      <link rel="canonical" href="https://www.indeed.com/viewjob?vjk=indeed-303">
+    `;
+    document.body.innerHTML = `
+      <main>
+        <section data-testid="jobsearch-JobComponent">
+          <h1>Frontend Engineer</h1>
+          <button id="apply-button">Apply now</button>
+        </section>
+      </main>
+    `;
+
+    expect(
+      isIndeedEasyApplyControl(document.getElementById("apply-button") as HTMLElement)
+    ).toBe(true);
+
+    document.getElementById("apply-button")?.addEventListener("click", () => {
+      const dialog = document.createElement("div");
+      dialog.id = "ia-container";
+      dialog.setAttribute("role", "dialog");
+      dialog.innerHTML = `
+        <h2>Apply to Frontend Engineer</h2>
+        <label>
+          Resume
+          <select id="resume-select" required>
+            <option value="">Select</option>
+            <option value="resume">Resume.pdf</option>
+          </select>
+        </label>
+        <button id="submit-application" disabled>Submit your application</button>
+        <button id="cancel-application">Cancel</button>
+      `;
+      document.body.appendChild(dialog);
+
+      const select = document.getElementById("resume-select") as HTMLSelectElement;
+      const submit = document.getElementById(
+        "submit-application"
+      ) as HTMLButtonElement;
+
+      select.addEventListener("change", () => {
+        submit.disabled = !select.value;
+      });
+      submit.addEventListener("click", () => {
+        submitted = true;
+        dialog.hidden = true;
+        const confirmation = document.createElement("p");
+        confirmation.textContent = "Your application has been submitted";
+        document.body.appendChild(confirmation);
+      });
+    });
+
+    const status = await runIndeedMode(profile, createDefaultSettings(), {
+      maxIdleRounds: 1,
+      actionDelayMs: 0,
+      surfaceTimeoutMs: 100
+    });
+
+    expect(submitted).toBe(true);
+    expect(status.visited).toBe(1);
+    expect(status.applied).toBe(1);
+    expect(status.skipped).toBe(0);
+    expect(status.failed).toBe(0);
+  });
+
   it("submits one resume-only Indeed Easy Apply job", async () => {
     const profile = createDefaultApplicantProfile();
     profile.documents.resume = {
